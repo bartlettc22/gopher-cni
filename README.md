@@ -136,40 +136,6 @@ All flags can also be set via environment variables:
 - `TLS_CERT_PATH`
 - `TLS_KEY_PATH`
 
-## Development
-
-### Build
-
-```bash
-# Build Docker image
-task docker:build
-
-# Run tests
-task go:test
-
-# Format code
-task go:fmt
-
-# Lint code
-task go:lint
-
-# Lint Helm chart
-task helm:lint
-```
-
-### Run Locally
-
-```bash
-# Build
-go build -o bin/gopher-cni .
-
-# Run daemon mode (default)
-./bin/gopher-cni --mode=daemon
-
-# Run init-validation mode
-./bin/gopher-cni --mode=init-validation
-```
-
 ## Troubleshooting
 
 ### Check Status
@@ -195,6 +161,7 @@ kubectl describe certificate -n gopher-cni-system
 
 - [Helm Chart Documentation](chart/gopher-cni/README.md) - Helm chart installation and configuration
 - [Configuration Reference](docs/CONFIGURATION.md) - Detailed configuration options
+- [Developer Guide](docs/DEV.md) - Building, testing, and running locally
 
 ## License
 
