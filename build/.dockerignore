@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+docs/
+CHANGELOG.md
+LICENSE
+
+# Tests
+*_test.go
+testdata/
+tests/
+coverage.out
+*.prof
+
+# Helm chart (not needed in image)
+chart/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+host
+
+# Build artifacts
+bin/
+dist/

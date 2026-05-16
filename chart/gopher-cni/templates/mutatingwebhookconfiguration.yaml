@@ -1,0 +1,48 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "gopher-cni.fullname" . }}-mutating
+  labels:
+    {{- include "gopher-cni.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace}}/{{ include "gopher-cni.certificateName" . }}
+webhooks:
+- name: mutate.gopher-cni.io
+  admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: {{ include "gopher-cni.webhookServiceName" . }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate
+      port: {{ .Values.service.port }}
+    # CA bundle will be injected by cert-manager
+  failurePolicy: {{ .Values.webhook.failurePolicy }}
+  matchPolicy: Equivalent
+  namespaceSelector:
+    matchExpressions:
+    - key: gopher-cni.io/webhook
+      operator: NotIn
+      values:
+      - disabled
+  objectSelector:
+    matchExpressions:
+    - key: gopher.cni/enabled
+      operator: In
+      values:
+      - "true"
+  reinvocationPolicy: Never
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pods
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}

@@ -1,0 +1,76 @@
+{{- if .Values.certificate.enabled }}
+{{- if .Values.certificate.issuer.create }}
+---
+# Self-signed Issuer
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "gopher-cni.selfsignedIssuerName" . }}
+  labels:
+    {{- include "gopher-cni.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+# Root CA Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "gopher-cni.caCertificateName" . }}
+  labels:
+    {{- include "gopher-cni.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: {{ include "gopher-cni.fullname" . }}-ca
+  secretName: {{ include "gopher-cni.caSecretName" . }}
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: {{ include "gopher-cni.selfsignedIssuerName" . }}
+    kind: Issuer
+    group: cert-manager.io
+---
+# CA Issuer
+apiVersion: cert-manager.io/v1
+kind: {{ .Values.certificate.issuer.kind | default "Issuer" }}
+metadata:
+  name: {{ include "gopher-cni.caIssuerName" . }}
+  labels:
+    {{- include "gopher-cni.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ include "gopher-cni.caSecretName" . }}
+{{- end }}
+---
+# Webhook Server Certificate
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "gopher-cni.certificateName" . }}
+  labels:
+    {{- include "gopher-cni.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "gopher-cni.certificateSecretName" . }}
+  duration: {{ .Values.certificate.duration }}
+  renewBefore: {{ .Values.certificate.renewBefore }}
+  subject:
+    organizations:
+    - gopher-cni
+  commonName: {{ include "gopher-cni.webhookServiceName" . }}.{{ .Release.Namespace }}.svc
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+  dnsNames:
+  - {{ include "gopher-cni.webhookServiceName" . }}
+  - {{ include "gopher-cni.webhookServiceName" . }}.{{ .Release.Namespace }}
+  - {{ include "gopher-cni.webhookServiceName" . }}.{{ .Release.Namespace }}.svc
+  - {{ include "gopher-cni.webhookServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    name: {{ include "gopher-cni.issuerName" . }}
+    kind: {{ include "gopher-cni.issuerKind" . }}
+    group: cert-manager.io
+{{- end }}

@@ -1,0 +1,163 @@
+version: '3'
+
+vars:
+  GOLANGCI_LINT_VERSION: v2.12.2
+  GOLANGCI_LINT_BIN: '{{.ROOT_DIR}}/bin/golangci-lint'
+  K3D_VERSION: v5.7.4
+  K3D_BIN: '{{.ROOT_DIR}}/bin/k3d'
+
+tasks:
+  _golangci-lint-install:
+    internal: true
+    run: once
+    vars:
+      VERSION_NO_V:
+        sh: echo "{{.GOLANGCI_LINT_VERSION}}" | sed 's/^v//'
+    cmds:
+    - |
+      if ! "{{.GOLANGCI_LINT_BIN}}" version 2>/dev/null | grep -qF "{{.GOLANGCI_LINT_VERSION}}"; then
+        echo "Installing golangci-lint {{.GOLANGCI_LINT_VERSION}}..."
+        mkdir -p "{{.ROOT_DIR}}/bin"
+        curl -sSfL \
+          "https://github.com/golangci/golangci-lint/releases/download/{{.GOLANGCI_LINT_VERSION}}/golangci-lint-{{.VERSION_NO_V}}-{{OS}}-{{ARCH}}.tar.gz" \
+          | tar -xz -C "{{.ROOT_DIR}}/bin" --strip-components=1 \
+            "golangci-lint-{{.VERSION_NO_V}}-{{OS}}-{{ARCH}}/golangci-lint"
+      fi
+
+  go:fmt:
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+    - go fmt ./...
+
+  go:fmt-check:
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+    - |
+      unformatted=$(gofmt -l $(find . -name '*.go' -not -path '*/vendor/*'))
+      if [ -n "$unformatted" ]; then
+        echo "The following files need formatting (run 'task go:fmt'):"
+        echo "$unformatted"
+        exit 1
+      fi
+
+  go:lint:
+    dir: '{{.USER_WORKING_DIR}}'
+    deps: [_golangci-lint-install]
+    cmds:
+    - '"{{.GOLANGCI_LINT_BIN}}" run --config {{.ROOT_DIR}}/.github/.golangci.yaml --timeout=5m'
+
+  go:test:
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      VERBOSE: '{{default "" .VERBOSE}}'
+      COVER: '{{default "" .COVER}}'
+      VERBOSE_FLAG:
+        sh: '[ -n "{{.VERBOSE}}" ] && echo "-v" || echo ""'
+      COVER_FLAGS:
+        sh: '[ -n "{{.COVER}}" ] && echo "-coverprofile=coverage.out -covermode=atomic" || echo ""'
+    cmds:
+    - go test -race {{.VERBOSE_FLAG}} {{.COVER_FLAGS}} ./...
+
+  _k3d-install:
+    internal: true
+    run: once
+    cmds:
+    - |
+      if ! "{{.K3D_BIN}}" version 2>/dev/null | grep -qF "{{.K3D_VERSION}}"; then
+        echo "Installing k3d {{.K3D_VERSION}}..."
+        mkdir -p "{{.ROOT_DIR}}/bin"
+        curl -sSfL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh \
+          | TAG={{.K3D_VERSION}} K3D_INSTALL_DIR={{.ROOT_DIR}}/bin USE_SUDO=false bash
+      fi
+
+  go:test-integration:
+    dir: '{{.ROOT_DIR}}'
+    deps: [_k3d-install]
+    vars:
+      KEEP_CLUSTER: '{{default "0" .KEEP_CLUSTER}}'
+    env:
+      KEEP_CLUSTER: '{{.KEEP_CLUSTER}}'
+      PATH:
+        sh: echo "{{.ROOT_DIR}}/bin:$PATH"
+    cmds:
+    - go test -v -count=1 -tags integration -timeout 20m ./tests/integration/...
+
+  go:tidy:
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+    - go mod tidy
+    - go mod vendor
+
+  docker:build:
+    dir: '{{.ROOT_DIR}}'
+    vars:
+      ARCH: '{{default "amd64" .ARCH}}'
+      REGISTRY: '{{default "ghcr.io/bartlettc22" .REGISTRY}}'
+      IMAGE: '{{default "gopher-cni" .IMAGE}}'
+      VERSION: '{{default "dev" .VERSION}}'
+      PUSH: '{{default "false" .PUSH}}'
+      PLATFORMS:
+        sh: |
+          if [ -n "{{.PLATFORMS}}" ]; then
+            echo "{{.PLATFORMS}}"
+          else
+            case "{{.ARCH}}" in
+              arm64|arm) echo "linux/arm64" ;;
+              *) echo "linux/amd64" ;;
+            esac
+          fi
+      OUTPUT:
+        sh: '[ "{{.PUSH}}" = "true" ] && echo "--push" || echo "--load"'
+      TAG: '{{.REGISTRY}}/{{.IMAGE}}:{{.VERSION}}'
+      INSTALL_QEMU_WITHOUT_PROMPT: '{{default "false" .INSTALL_QEMU_WITHOUT_PROMPT}}'
+    cmds:
+    - |
+      if echo "{{.PLATFORMS}}" | grep -q "arm64"; then
+        if [ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+          if [ "{{.INSTALL_QEMU_WITHOUT_PROMPT}}" != "true" ]; then
+            read -r -p "Install arm64 QEMU binfmt handlers (requires --privileged)? [y/N] " confirm
+            [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "Aborted."; exit 1; }
+          fi
+          docker run --privileged --rm tonistiigi/binfmt --install arm64
+        fi
+      fi
+    - |
+      docker buildx build \
+        --platform {{.PLATFORMS}} \
+        --build-arg VERSION={{.VERSION}} \
+        --tag {{.TAG}} \
+        --file build/Dockerfile \
+        {{.OUTPUT}} \
+        .
+
+  docker:publish:
+    vars:
+      REGISTRY: '{{default "ghcr.io/bartlettc22" .REGISTRY}}'
+      IMAGE: '{{default "gopher-cni" .IMAGE}}'
+      VERSION: '{{default "dev" .VERSION}}'
+      INSTALL_QEMU_WITHOUT_PROMPT: '{{default "false" .INSTALL_QEMU_WITHOUT_PROMPT}}'
+    cmds:
+    - task: docker:build
+      vars:
+        REGISTRY: '{{.REGISTRY}}'
+        IMAGE: '{{.IMAGE}}'
+        VERSION: '{{.VERSION}}'
+        PLATFORMS: linux/amd64,linux/arm64
+        PUSH: "true"
+        INSTALL_QEMU_WITHOUT_PROMPT: '{{.INSTALL_QEMU_WITHOUT_PROMPT}}'
+
+  helm:publish:
+    dir: '{{.ROOT_DIR}}'
+    vars:
+      REGISTRY: '{{default "ghcr.io/bartlettc22" .REGISTRY}}'
+      VERSION: '{{default "0.0.0" .VERSION}}'
+      VERSION_NO_V:
+        sh: echo "{{.VERSION}}" | sed 's/^v//'
+    cmds:
+    - helm package chart/gopher-cni --version {{.VERSION_NO_V}} --app-version {{.VERSION}} --destination /tmp
+    - helm push /tmp/gopher-cni-{{.VERSION_NO_V}}.tgz oci://{{.REGISTRY}}/helm-charts
+
+  helm:lint:
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+    - helm lint chart/gopher-cni

@@ -1,0 +1,120 @@
+# Default values for gopher-cni
+# This is a YAML-formatted file.
+
+image:
+  repository: ghcr.io/bartlettc22/gopher-cni
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+logLevel: info
+logFormat: json
+
+cni:
+  host:
+    cniNetDir: /etc/cni/net.d
+    binPath: /opt/cni/bin
+    udsSocketDir: /var/run/gopher-cni
+  containerHostPathPrefix: /host
+
+# Webhook server configuration
+webhook:
+  port: 8443
+  # Container image for injected init/sidecar containers
+  # Defaults to daemonset image
+  injectedImage: ""
+
+  # TLS certificate paths (mounted from secret)
+  tls:
+    enabled: true
+    certPath: "/etc/webhook/certs/tls.crt"
+    keyPath: "/etc/webhook/certs/tls.key"
+  # Webhook failure policy (Fail or Ignore)
+  failurePolicy: Fail
+  # Webhook timeout in seconds
+  timeoutSeconds: 10
+
+# cert-manager certificate configuration
+certificate:
+  enabled: true
+  # Certificate duration (90 days)
+  duration: 2160h
+  # Renew certificate before expiry (15 days)
+  renewBefore: 360h
+  # Issuer configuration
+  issuer:
+    # Create self-signed issuer and CA
+    create: true
+    # Issuer name (if using existing issuer, set create: false)
+    name: ""
+    # Issuer kind (Issuer or ClusterIssuer)
+    kind: Issuer
+
+# Service account
+serviceAccount:
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Pod security context
+# Note: DaemonSet needs to run with elevated privileges to install CNI plugin
+podSecurityContext: {}
+
+# Container security context
+# Note: Requires privileges to write to host CNI directories
+securityContext: {}
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 443
+  targetPort: 8443
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Liveness probe configuration
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8443
+    scheme: HTTPS
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+# Readiness probe configuration
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8443
+    scheme: HTTPS
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations - by default, run on all nodes including control plane
+tolerations:
+- operator: Exists
+  effect: NoSchedule
+
+# Affinity rules
+affinity: {}
