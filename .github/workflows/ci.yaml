@@ -121,7 +121,7 @@ jobs:
           version: 3.x
 
       - name: Build Docker image
-        run: task docker:build ARCH=${{ matrix.arch }} INSTALL_QEMU_WITHOUT_PROMPT=true VERSION=${{ github.ref_name }}
+        run: task docker:build ARCH=${{ matrix.arch }} INSTALL_QEMU_WITHOUT_PROMPT=true VERSION=${{ github.head_ref || github.ref_name }}
 
   publish:
     name: Publish
