@@ -311,10 +311,9 @@ func createWebhookCertSecret(ctx context.Context) ([]byte, error) {
 	return certPEM, nil
 }
 
-// patchWebhookCABundle sets caBundle on both the MutatingWebhookConfiguration
-// and ValidatingWebhookConfiguration so the API server can verify the webhook
-// server's self-signed certificate for both admission phases.
-// Must be called after Helm install (the resources must already exist).
+// patchWebhookCABundle sets caBundle on the MutatingWebhookConfiguration and
+// ValidatingWebhookConfiguration so the API server can verify the webhook
+// server's self-signed certificate. Must be called after Helm install.
 func patchWebhookCABundle(ctx context.Context, caPEM []byte) error {
 	caB64 := base64.StdEncoding.EncodeToString(caPEM)
 
@@ -328,11 +327,7 @@ func patchWebhookCABundle(ctx context.Context, caPEM []byte) error {
 	}
 	fmt.Printf("Patched caBundle on MutatingWebhookConfiguration %q\n", helmRelease+"-mutating")
 
-	// The validating config has two webhooks (pods and controllers).
-	validatingPatch := fmt.Sprintf(`[`+
-		`{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":%q},`+
-		`{"op":"replace","path":"/webhooks/1/clientConfig/caBundle","value":%q}`+
-		`]`, caB64, caB64)
+	validatingPatch := fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":%q}]`, caB64)
 	if _, err := kubectl(ctx,
 		"patch", "validatingwebhookconfiguration", helmRelease+"-validating",
 		"--type=json",

@@ -10,7 +10,6 @@ import (
 
 	"github.com/bartlettc22/gopher-cni/pkg/cni"
 	admissionv1 "k8s.io/api/admission/v1"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -101,109 +100,30 @@ func (h *ValidateHandler) validate(ar *admissionv1.AdmissionReview) *admissionv1
 		Allowed: true,
 	}
 
-	// Extract pod spec based on resource type
-	var podSpec *corev1.PodSpec
-	var podLabels map[string]string
-	var podAnnotations map[string]string
-	var resourceKind string
-	var resourceName string
-	var resourceNamespace string
+	// Only pods are validated
+	if req.Kind.Kind != "Pod" {
+		return response
+	}
 
-	switch req.Kind.Kind {
-	case "Pod":
-		pod := corev1.Pod{}
-		if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
-			response.Allowed = false
-			response.Result = &metav1.Status{
-				Status:  "Failure",
-				Message: fmt.Sprintf("could not unmarshal pod: %v", err),
-				Code:    http.StatusBadRequest,
-			}
-			return response
-		}
-		podSpec = &pod.Spec
-		podLabels = pod.Labels
-		podAnnotations = pod.Annotations
-		resourceKind = "Pod"
-		resourceName = pod.Name
-		resourceNamespace = pod.Namespace
-
-	case "Deployment":
-		deployment := appsv1.Deployment{}
-		if err := json.Unmarshal(req.Object.Raw, &deployment); err != nil {
-			response.Allowed = false
-			response.Result = &metav1.Status{
-				Status:  "Failure",
-				Message: fmt.Sprintf("could not unmarshal deployment: %v", err),
-				Code:    http.StatusBadRequest,
-			}
-			return response
-		}
-		podSpec = &deployment.Spec.Template.Spec
-		podLabels = deployment.Spec.Template.Labels
-		podAnnotations = deployment.Spec.Template.Annotations
-		resourceKind = "Deployment"
-		resourceName = deployment.Name
-		resourceNamespace = deployment.Namespace
-
-	case "StatefulSet":
-		statefulSet := appsv1.StatefulSet{}
-		if err := json.Unmarshal(req.Object.Raw, &statefulSet); err != nil {
-			response.Allowed = false
-			response.Result = &metav1.Status{
-				Status:  "Failure",
-				Message: fmt.Sprintf("could not unmarshal statefulset: %v", err),
-				Code:    http.StatusBadRequest,
-			}
-			return response
-		}
-		podSpec = &statefulSet.Spec.Template.Spec
-		podLabels = statefulSet.Spec.Template.Labels
-		podAnnotations = statefulSet.Spec.Template.Annotations
-		resourceKind = "StatefulSet"
-		resourceName = statefulSet.Name
-		resourceNamespace = statefulSet.Namespace
-
-	case "DaemonSet":
-		daemonSet := appsv1.DaemonSet{}
-		if err := json.Unmarshal(req.Object.Raw, &daemonSet); err != nil {
-			response.Allowed = false
-			response.Result = &metav1.Status{
-				Status:  "Failure",
-				Message: fmt.Sprintf("could not unmarshal daemonset: %v", err),
-				Code:    http.StatusBadRequest,
-			}
-			return response
-		}
-		podSpec = &daemonSet.Spec.Template.Spec
-		podLabels = daemonSet.Spec.Template.Labels
-		podAnnotations = daemonSet.Spec.Template.Annotations
-		resourceKind = "DaemonSet"
-		resourceName = daemonSet.Name
-		resourceNamespace = daemonSet.Namespace
-
-	default:
+	pod := corev1.Pod{}
+	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
 		response.Allowed = false
 		response.Result = &metav1.Status{
 			Status:  "Failure",
-			Message: fmt.Sprintf("unsupported resource kind: %s", req.Kind.Kind),
+			Message: fmt.Sprintf("could not unmarshal pod: %v", err),
 			Code:    http.StatusBadRequest,
 		}
 		return response
 	}
 
-	// Check if validation is needed
-	// Only validate if the gopher.cni/enabled=true label is set
-	if !shouldInjectForLabels(podLabels) {
+	if !shouldInjectForLabels(pod.Labels) {
 		validateLogger.Debug("skipping validation, no injection label set",
-			"namespace", resourceNamespace,
-			"kind", resourceKind,
-			"name", resourceName)
+			"namespace", pod.Namespace,
+			"name", pod.Name)
 		return response
 	}
 
-	// Validate the pod spec
-	validationErrors := h.validatePodSpec(podSpec, podLabels, podAnnotations)
+	validationErrors := h.validatePodSpec(&pod.Spec, pod.Labels, pod.Annotations)
 	if len(validationErrors) > 0 {
 		response.Allowed = false
 		causes := make([]metav1.StatusCause, len(validationErrors))
@@ -218,7 +138,7 @@ func (h *ValidateHandler) validate(ar *admissionv1.AdmissionReview) *admissionv1
 		}
 		response.Result = &metav1.Status{
 			Status:  "Failure",
-			Message: fmt.Sprintf("%s validation failed: %s", resourceKind, strings.Join(errorMessages, "; ")),
+			Message: fmt.Sprintf("pod validation failed: %s", strings.Join(errorMessages, "; ")),
 			Code:    http.StatusUnprocessableEntity,
 			Reason:  metav1.StatusReasonInvalid,
 			Details: &metav1.StatusDetails{
