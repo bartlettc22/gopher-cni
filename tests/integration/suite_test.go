@@ -362,7 +362,8 @@ func waitForWebhook(ctx context.Context) error {
 			"--restart", "Never",
 			"--dry-run=server",
 		)
-		if err == nil || !strings.Contains(stderr, "connection refused") {
+		notReady := strings.Contains(stderr, "connection refused") || strings.Contains(stderr, "no endpoints available")
+		if err == nil || !notReady {
 			fmt.Println("Webhook is ready")
 			return nil
 		}
