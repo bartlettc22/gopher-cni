@@ -31,9 +31,9 @@ const (
 	setupTimeout    = 5 * time.Minute
 	teardownTimeout = 2 * time.Minute
 
-	imageRef      = "gopher-cni:integration"
-	helmRelease   = "gopher-cni"
-	helmNamespace = "gopher-cni-system"
+	imageRef           = "gopher-cni:integration"
+	helmRelease        = "gopher-cni"
+	helmNamespace      = "gopher-cni-system"
 	helmChart          = "../../chart/gopher-cni"
 	webhookServiceName = helmRelease + "-webhook"
 	webhookCertSecret  = helmRelease + "-webhook-certs"

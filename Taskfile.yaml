@@ -27,7 +27,7 @@ tasks:
   go:fmt:
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
-    - go fmt ./...
+    - gofmt -w $(find . -name '*.go' -not -path '*/vendor/*')
 
   go:fmt-check:
     dir: '{{.USER_WORKING_DIR}}'
