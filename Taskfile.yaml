@@ -79,10 +79,8 @@ tasks:
       KEEP_CLUSTER: '{{default "0" .KEEP_CLUSTER}}'
     env:
       KEEP_CLUSTER: '{{.KEEP_CLUSTER}}'
-      PATH:
-        sh: echo "{{.ROOT_DIR}}/bin:$PATH"
     cmds:
-    - go test -v -count=1 -tags integration -timeout 20m ./tests/integration/...
+    - PATH="{{.ROOT_DIR}}/bin:$PATH" go test -v -count=1 -tags integration -timeout 20m ./tests/integration/...
 
   go:tidy:
     dir: '{{.USER_WORKING_DIR}}'
