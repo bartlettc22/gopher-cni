@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 )
 
-
 // UDSLogWriter implements io.Writer and sends logs to a UDS server via HTTP
 type UDSLogWriter struct {
 	client   *http.Client

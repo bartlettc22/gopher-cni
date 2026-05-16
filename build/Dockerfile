@@ -15,7 +15,7 @@ WORKDIR /src
 # The build stage runs on the host platform (BUILDPLATFORM) so no QEMU is
 # needed; GOOS/GOARCH target the final image's platform (TARGETPLATFORM).
 RUN --mount=type=cache,target=/root/.cache/go-build \
-  CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=vendor -ldflags "-s -w -extldflags \"-static\" -X 'github.com/bartlettc22/gopher-cni/pkg/version.Version=${VERSION}'" -o /gopher .
+  CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=vendor -ldflags "-s -w -extldflags \"-static\" -X 'github.com/bartlettc22/gopher-cni/pkg/version.Version=${VERSION}'" -o /gopher ./cmd/main
 RUN --mount=type=cache,target=/root/.cache/go-build \
   CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=vendor -ldflags "-s -w -extldflags \"-static\" -X 'github.com/bartlettc22/gopher-cni/pkg/version.Version=${VERSION}'" -o /plugin ./plugin
 
