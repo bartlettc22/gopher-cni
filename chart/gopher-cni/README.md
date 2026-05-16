@@ -8,6 +8,19 @@ A Helm chart for deploying Gopher CNI to Kubernetes. Gopher CNI is a CNI plugin 
 - Helm 3.0+
 - [cert-manager](https://cert-manager.io/) installed in the cluster
 
+## Namespace PodSecurity requirement
+
+This chart deploys a DaemonSet that mounts host paths (`/opt/cni/bin`, `/etc/cni/net.d`, `/var/run/gopher-cni`), which is required for CNI plugin installation. Clusters with [Pod Security Admission](https://kubernetes.io/docs/concepts/security/pod-security-admission/) enforced at `baseline` or `restricted` will block these pods.
+
+Before installing, label the target namespace to allow privileged pods:
+
+```bash
+kubectl create namespace gopher-cni
+kubectl label namespace gopher-cni \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/enforce-version=latest
+```
+
 ## Installing cert-manager
 
 If you don't have cert-manager installed:
@@ -24,17 +37,16 @@ helm install cert-manager jetstack/cert-manager \
 ## Installing the Chart
 
 ```bash
-# Add the repository (if published)
-helm repo add gopher-cni https://bartlettc22.github.io/gopher-cni
-
-# Install the chart
-helm install gopher-cni gopher-cni/gopher-cni \
-  --namespace gopher-cni-system \
+helm install gopher-cni oci://ghcr.io/bartlettc22/charts/gopher-cni \
+  --namespace gopher-cni \
   --create-namespace
+```
 
-# Or install from local chart
+Or install from a local chart:
+
+```bash
 helm install gopher-cni ./chart/gopher-cni \
-  --namespace gopher-cni-system \
+  --namespace gopher-cni \
   --create-namespace
 ```
 
