@@ -155,7 +155,7 @@ tasks:
         sh: echo "{{.VERSION}}" | sed 's/^v//'
     cmds:
     - helm package chart/gopher-cni --version {{.VERSION_NO_V}} --app-version {{.VERSION}} --destination /tmp
-    - helm push /tmp/gopher-cni-{{.VERSION_NO_V}}.tgz oci://{{.REGISTRY}}/helm-charts
+    - helm push /tmp/gopher-cni-{{.VERSION_NO_V}}.tgz oci://{{.REGISTRY}}/charts
 
   helm:lint:
     dir: '{{.USER_WORKING_DIR}}'
