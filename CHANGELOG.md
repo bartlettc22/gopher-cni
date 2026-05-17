@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0]
+
+### Fixed
+- `Uninstall()` now passes the CNI net directory (not the config file path) to `uninstallCNIConfig`, so the gopher-cni entry is correctly removed from the conflist on pod shutdown — previously the entry was silently left in place
+- `Uninstall()` now prepends `MountedHostDir` when locating the CNI binary for removal, so the binary is actually deleted from the host filesystem instead of a non-existent container path
+- Integration test pods now set `terminationGracePeriodSeconds: 0` so namespace cleanup during tests does not wait 30 seconds for `sleep 3600` pods to terminate
+
+### Added
+- Unit test for `Uninstall()` in `pkg/install-cni` covering correct host-path removal of the kubeconfig, binary, and gopher-cni conflist entry
+
 ## [0.3.0]
 
 ### Changed

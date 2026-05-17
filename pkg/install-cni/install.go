@@ -107,19 +107,19 @@ func (in *Installer) Uninstall() {
 
 	if len(in.cniConfigFilepath) > 0 && utils.FileExists(in.cniConfigFilepath) {
 		log.Info("removing CNI plugin config from CNI config file", "path", in.cniConfigFilepath)
-		if err := uninstallCNIConfig(in.cniConfigFilepath); err != nil {
+		if err := uninstallCNIConfig(filepath.Join(in.cfg.MountedHostDir, in.cfg.CNINetDir)); err != nil {
 			log.Error("error removing CNI plugin config from CNI config file", "error", err)
 		}
 	}
 
 	if len(in.kubeconfigFilepath) > 0 && utils.FileExists(in.kubeconfigFilepath) {
-		log.Info("removing CNI kubeconfig file: %s", in.kubeconfigFilepath)
+		log.Info("removing CNI kubeconfig file", "path", in.kubeconfigFilepath)
 		if err := os.Remove(in.kubeconfigFilepath); err != nil {
 			log.Error("error removing kubeconfig", "error", err)
 		}
 	}
 
-	if cniBin := filepath.Join(in.cfg.CNIBinTargetDir, cni.PluginBinaryName); utils.FileExists(cniBin) {
+	if cniBin := filepath.Join(in.cfg.MountedHostDir, in.cfg.CNIBinTargetDir, cni.PluginBinaryName); utils.FileExists(cniBin) {
 		log.Info("removing binary", "path", cniBin)
 		if err := os.Remove(cniBin); err != nil {
 			log.Error("error removing binary", "error", err)

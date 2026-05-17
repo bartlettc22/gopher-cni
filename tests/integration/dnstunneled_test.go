@@ -27,11 +27,14 @@ func (s *IntegrationSuite) TestDNSTunneledFalse() {
 
 	fmt.Printf("Deploying pod with dns-tunneled=false in namespace %q...\n", dnsTunneledNamespace)
 
-	overrides := fmt.Sprintf(`{"metadata":{"annotations":{`+
+	overrides := fmt.Sprintf(`{`+
+		`"metadata":{"annotations":{`+
 		`"gopher.cni/wgconf-secret":%q,`+
 		`"gopher.cni/cni-mode":"pod-origin",`+
 		`"gopher.cni/dns-tunneled":"false"`+
-		`}}}`, wgSecretName)
+		`}},`+
+		`"spec":{"terminationGracePeriodSeconds":0}`+
+		`}`, wgSecretName)
 
 	_, err := kubectl(ctx,
 		"run", wgPodName,
