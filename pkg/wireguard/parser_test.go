@@ -168,6 +168,36 @@ AllowedIPs = 10.0.0.2/32`,
 			},
 		},
 		{
+			name: "multiple comma-separated addresses picks first ipv4",
+			input: `[Interface]
+PrivateKey = ` + testPrivateKey + `
+Address = 10.0.0.1/24, 10.0.0.2/32`,
+			wantErr: false,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Address == nil {
+					t.Fatal("expected address to be set")
+				}
+				if cfg.Address.String() != "10.0.0.0/24" {
+					t.Errorf("expected first address 10.0.0.0/24, got %s", cfg.Address.String())
+				}
+			},
+		},
+		{
+			name: "ipv6 address before ipv4 picks first ipv4",
+			input: `[Interface]
+PrivateKey = ` + testPrivateKey + `
+Address = fd00::1/128, 10.0.0.1/24`,
+			wantErr: false,
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Address == nil {
+					t.Fatal("expected address to be set")
+				}
+				if cfg.Address.String() != "10.0.0.0/24" {
+					t.Errorf("expected first IPv4 address 10.0.0.0/24, got %s", cfg.Address.String())
+				}
+			},
+		},
+		{
 			name: "invalid private key",
 			input: `[Interface]
 PrivateKey = invalid-key`,

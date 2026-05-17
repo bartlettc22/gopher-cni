@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0]
+
+### Changed
+- WireGuard config parser now supports multiple comma-separated `Address` entries; selects the first IPv4 address (IPv6 and multiple address support pending)
+
 ## [0.2.0]
 
 ### Added

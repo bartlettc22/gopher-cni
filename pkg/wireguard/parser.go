@@ -117,11 +117,21 @@ func parseInterfaceKey(config *wgtypes.Config, address **net.IPNet, dns *[]net.I
 		config.FirewallMark = &fwmark
 
 	case "address":
-		_, ipnet, err := net.ParseCIDR(value)
-		if err != nil {
-			return fmt.Errorf("line %d: invalid address: %w", lineNum, err)
+		// TODO: support multiple interface addresses and IPv6
+		addrs := strings.Split(value, ",")
+		for _, addrStr := range addrs {
+			addrStr = strings.TrimSpace(addrStr)
+			if addrStr == "" {
+				continue
+			}
+			ip, ipnet, err := net.ParseCIDR(addrStr)
+			if err != nil {
+				return fmt.Errorf("line %d: invalid address %q: %w", lineNum, addrStr, err)
+			}
+			if ip.To4() != nil && *address == nil {
+				*address = ipnet
+			}
 		}
-		*address = ipnet
 
 	case "dns":
 		// Split comma-separated DNS servers
