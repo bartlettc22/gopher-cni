@@ -53,10 +53,13 @@ func createWGSecret(ctx context.Context, namespace, secretName, wgConf string) e
 
 // deployWGPod deploys a pod with gopher-cni annotations for the given CNI mode.
 func deployWGPod(ctx context.Context, namespace, podName, image, secretName, cniMode string) error {
-	overrides := fmt.Sprintf(`{"metadata":{"annotations":{`+
+	overrides := fmt.Sprintf(`{`+
+		`"metadata":{"annotations":{`+
 		`"gopher.cni/wgconf-secret":%q,`+
 		`"gopher.cni/cni-mode":%q`+
-		`}}}`, secretName, cniMode)
+		`}},`+
+		`"spec":{"terminationGracePeriodSeconds":0}`+
+		`}`, secretName, cniMode)
 
 	_, err := kubectl(ctx,
 		"run", podName,
