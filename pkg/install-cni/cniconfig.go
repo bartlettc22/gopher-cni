@@ -61,10 +61,18 @@ func installCNIConfig(pluginConfigMap map[string]any, CNINetDir string) (string,
 	return cniConfigFilepath, nil
 }
 
-func uninstallCNIConfig(CNINetDir string) error {
-	cniConfigFilepath, existingCNIConfig, err := getCNIConfig(CNINetDir)
+// uninstallCNIConfig removes the gopher-cni plugin entry from the conflist at
+// the given file path. The path must be the full path to the conflist file
+// (not a directory), which is the value stored in Installer.cniConfigFilepath.
+func uninstallCNIConfig(cniConfigFilepath string) error {
+	configBytes, err := os.ReadFile(cniConfigFilepath)
 	if err != nil {
-		return err
+		return fmt.Errorf("error reading CNI config file: %v", err)
+	}
+
+	var existingCNIConfig map[string]any
+	if err := json.Unmarshal(configBytes, &existingCNIConfig); err != nil {
+		return fmt.Errorf("error unmarshaling CNI config: %v", err)
 	}
 
 	newCNIConfigMap, err := removeCNIPluginConfig(existingCNIConfig)
@@ -72,11 +80,7 @@ func uninstallCNIConfig(CNINetDir string) error {
 		return err
 	}
 
-	if err = writeCNIConfigMap(cniConfigFilepath, newCNIConfigMap); err != nil {
-		return err
-	}
-
-	return nil
+	return writeCNIConfigMap(cniConfigFilepath, newCNIConfigMap)
 }
 
 // Waits indefinitely for a main CNI config file to exist before returning
