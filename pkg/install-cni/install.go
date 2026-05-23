@@ -107,7 +107,7 @@ func (in *Installer) Uninstall() {
 
 	if len(in.cniConfigFilepath) > 0 && utils.FileExists(in.cniConfigFilepath) {
 		log.Info("removing CNI plugin config from CNI config file", "path", in.cniConfigFilepath)
-		if err := uninstallCNIConfig(filepath.Join(in.cfg.MountedHostDir, in.cfg.CNINetDir)); err != nil {
+		if err := uninstallCNIConfig(in.cniConfigFilepath); err != nil {
 			log.Error("error removing CNI plugin config from CNI config file", "error", err)
 		}
 	}
