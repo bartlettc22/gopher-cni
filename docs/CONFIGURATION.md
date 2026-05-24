@@ -15,6 +15,7 @@ The `gopher.cni/enabled` label serves as the primary gate for the Gopher CNI fea
 |`gopher.cni/wgconf-secret`|The name of a Kubernetes secret containing WireGuard configuration. See below for Secret definition. Required if `gopher.cni/enabled` label is set to `"true"`.|`""`|
 |`gopher.cni/cni-mode`|Which CNI operation mode to use (see below).  Allowed values: `pod-origin`, `host-origin`|`pod-origin`|
 |`gopher.cni/dns-tunneled`|Whether to tunnel DNS traffic. DNS server address is taken from the WireGuard config. If not specified in the config, no resolvers will be added.|`true`|
+|`gopher.cni/split-tunnel-cidrs`|Comma-separated list of CIDRs to route via the pod's original default interface instead of the WireGuard tunnel. See [Split Tunneling](#split-tunneling) below.|`""`|
 
 
 ### Complete Pod Example
@@ -30,6 +31,7 @@ metadata:
     gopher.cni/cni-mode: "host-origin"
     gopher.cni/dns-tunneled: "true"
     gopher.cni/nat-pmp: "true"
+    gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
 spec:
   containers:
   - name: app
@@ -88,6 +90,25 @@ Considerations:
 * Non-tunnelled traffic can exit the pod through the pod's default interface (ex: `eth0`), if not removed (future feature)
 
 See https://www.wireguard.com/netns/ for more details.
+
+## Split Tunneling
+Split tunneling allows specific CIDRs to bypass the WireGuard tunnel and be routed through the pod's original default interface instead. All other traffic continues to flow through WireGuard.
+
+This is configured via the `gopher.cni/split-tunnel-cidrs` annotation, which accepts a comma-separated list of CIDRs:
+
+```yaml
+annotations:
+  gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
+```
+
+A common use case is to keep traffic to cluster-internal networks (e.g. the Kubernetes service CIDR and pod CIDR) routed locally while sending all other traffic through the tunnel:
+
+```yaml
+annotations:
+  gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
+```
+
+This works in both `pod-origin` and `host-origin` modes.
 
 ## DNS Tunneling
 The CNI plugin can tunnel DNS traffic through the WireGuard tunnel.  This is enabled by setting the `gopher.cni/dns-tunneled` annotation to `true` (default).  The DNS server address is taken from the WireGuard configuration.

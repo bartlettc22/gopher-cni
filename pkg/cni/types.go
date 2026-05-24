@@ -28,6 +28,10 @@ const (
 	// AnnotationNATPMP is the annotation key for NAT-PMP port forwarding
 	AnnotationNATPMP = LabelPrefix + "nat-pmp"
 
+	// AnnotationSplitTunnelCIDRs is the annotation key for a comma-separated list of CIDRs
+	// that should be routed via the default interface instead of the WireGuard tunnel.
+	AnnotationSplitTunnelCIDRs = LabelPrefix + "split-tunnel-cidrs"
+
 	// CNIModePodOrigin is the pod-origin CNI mode
 	CNIModePodOrigin = "pod-origin"
 

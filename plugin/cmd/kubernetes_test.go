@@ -627,6 +627,119 @@ func TestCNIProvider_MultipleLabels(t *testing.T) {
 	assert.Equal(t, wgConfig, config)
 }
 
+// TestCNIMode tests the CNIMode method
+func TestCNIMode(t *testing.T) {
+	tests := []struct {
+		name         string
+		annotations  map[string]string
+		expectedMode string
+	}{
+		{
+			name:         "no annotation returns default",
+			annotations:  map[string]string{},
+			expectedMode: cni.CNIModePodOrigin,
+		},
+		{
+			name:         "pod-origin annotation",
+			annotations:  map[string]string{cni.AnnotationCNIMode: cni.CNIModePodOrigin},
+			expectedMode: cni.CNIModePodOrigin,
+		},
+		{
+			name:         "host-origin annotation",
+			annotations:  map[string]string{cni.AnnotationCNIMode: cni.CNIModeHostOrigin},
+			expectedMode: cni.CNIModeHostOrigin,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newMockClient()
+			client.addPod("default", "test-pod", map[string]string{}, tt.annotations)
+			provider, err := newKubeProviderFromCNI(makeKubeConfig(), makeCNIArgs("test-pod", "default"), client, slog.Default())
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedMode, provider.CNIMode())
+		})
+	}
+}
+
+// TestSplitTunnelCIDRs tests the SplitTunnelCIDRs method
+func TestSplitTunnelCIDRs(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotation  string
+		expectCIDRs []string
+		expectError string
+	}{
+		{
+			name:        "no annotation returns nil",
+			annotation:  "",
+			expectCIDRs: nil,
+		},
+		{
+			name:        "single CIDR",
+			annotation:  "192.168.1.0/24",
+			expectCIDRs: []string{"192.168.1.0/24"},
+		},
+		{
+			name:        "multiple CIDRs",
+			annotation:  "192.168.1.0/24,10.0.0.0/8",
+			expectCIDRs: []string{"192.168.1.0/24", "10.0.0.0/8"},
+		},
+		{
+			name:        "CIDRs with spaces",
+			annotation:  "192.168.1.0/24, 10.0.0.0/8",
+			expectCIDRs: []string{"192.168.1.0/24", "10.0.0.0/8"},
+		},
+		{
+			name:        "host bits masked to network address",
+			annotation:  "192.168.1.5/24",
+			expectCIDRs: []string{"192.168.1.0/24"},
+		},
+		{
+			name:        "invalid CIDR returns error",
+			annotation:  "not-a-cidr",
+			expectError: "invalid CIDR",
+		},
+		{
+			name:        "invalid CIDR in list returns error",
+			annotation:  "192.168.1.0/24,bad",
+			expectError: "invalid CIDR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			annotations := map[string]string{}
+			if tt.annotation != "" {
+				annotations[cni.AnnotationSplitTunnelCIDRs] = tt.annotation
+			}
+
+			client := newMockClient()
+			client.addPod("default", "test-pod", map[string]string{}, annotations)
+			provider, err := newKubeProviderFromCNI(makeKubeConfig(), makeCNIArgs("test-pod", "default"), client, slog.Default())
+			require.NoError(t, err)
+
+			cidrs, err := provider.SplitTunnelCIDRs()
+
+			if tt.expectError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectError)
+				return
+			}
+
+			require.NoError(t, err)
+			if tt.expectCIDRs == nil {
+				assert.Nil(t, cidrs)
+			} else {
+				require.Len(t, cidrs, len(tt.expectCIDRs))
+				for i, cidr := range cidrs {
+					assert.Equal(t, tt.expectCIDRs[i], cidr.String())
+				}
+			}
+		})
+	}
+}
+
 // BenchmarkNewKubeProviderFromCNI benchmarks provider creation
 func BenchmarkNewKubeProviderFromCNI(b *testing.B) {
 	client := newMockClient()
