@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0]
+
+### Added
+- `gopher.cni/split-tunnel-cidrs` annotation: comma-separated list of CIDRs to route via the pod's original default interface instead of the WireGuard tunnel, enabling split-tunnel configurations in both `pod-origin` and `host-origin` modes
+
+### Changed
+- Refactored WireGuard network setup code: removed dead code, eliminated duplicate logic, and separated interface configuration from route management
+- Webhook DNS injection now filters to IPv4 addresses only, as IPv6 tunnel DNS is not currently supported
+
 ## [0.5.0]
 
 ### Fixed

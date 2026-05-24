@@ -20,7 +20,7 @@ const wgMTU = 1420
 // then moving it to the desired namespace.  This creates an isolated Wireguard interface inside the container
 // that is not reliant/connected to the container's original interface.  The original interface is left intact
 // but could safely be removed if not needed.
-func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr, log *slog.Logger) error {
+func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr, splitTunnelCIDRs []*net.IPNet, log *slog.Logger) error {
 
 	// 1. Add the wireguard link (interface) to the current (host) network namespace
 	wgLink := &netlink.Wireguard{
@@ -43,152 +43,30 @@ func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgA
 		return fmt.Errorf("could not move network link %q into network namespace %q: %v", wgLink.Attrs().Name, netNSName, err)
 	}
 
-	// _, err = net.AddNSLinkFromCurrentNS(&net.LinkConfig{
-	// 	Name:      wgIface,
-	// 	LinkType:  net.LINK_TYPE_WIREGUARD,
-	// 	NetNSPath: args.Netns,
-	// 	Addresses: []*netlink.Addr{addr},
-	// 	// MTU set based on this blog: https://keremerkan.net/posts/wireguard-mtu-fixes/
-	// 	// May need to be adjusted in the future
-	// 	MTU: 1280,
-	// 	ConfigureFunc: func(wglink *netlink.Link) error {
-	// 		err := wireguard.ConfigureWireguard((*wglink).Attrs().Name, wgConfig)
-	// 		if err != nil {
-	// 			return fmt.Errorf("%s error configuring wireguard: %v", logPrefix, err)
-	// 		}
-	// 		return nil
-	// 	},
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("%s error creating network link: %v", logPrefix, err)
-	// }
-
 	// Perform remaining operations in the destination (container) network namespace
 	return containerNS.Do(func(_ ns.NetNS) error {
-		// linkConf := &net.LinkConfig{
-		// 	Name:      wgIface,
-		// 	LinkType:  net.LINK_TYPE_WIREGUARD,
-		// 	NetNSPath: args.Netns,
-		// 	Addresses: []*netlink.Addr{addr},
-		// 	// MTU set based on this blog: https://keremerkan.net/posts/wireguard-mtu-fixes/
-		// 	// May need to be adjusted in the future
-		// 	MTU: 1280,
-		// 	ConfigureFunc: func(wglink *netlink.Link) error {
-		// 		err := wireguard.ConfigureWireguard((*wglink).Attrs().Name, wgConfig)
-		// 		if err != nil {
-		// 			return e("failed to configure wireguard", err)
-		// 		}
-		// 		return nil
-		// 	},
-		// }
-		// netlink.LinkAdd(netlink.Ne)
-
-		// wgLink, err := netlink.LinkByName(wgIfaceName)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to get link: %v", err)
-		// }
-
-		// 4. Assign IP address to the wireguard interface
-		if err := netlink.AddrAdd(wgLink, wgAddr); err != nil {
-			return fmt.Errorf("failed to add addr %q: %v", wgAddr.String(), err)
-		}
-
-		// 5. Configure WireGuard specifics (keys, peers, etc.)
-		client, err := wgctrl.New()
+		// 4. Capture the original default route before WireGuard replaces it
+		origDefault, err := defaultRoute()
 		if err != nil {
-			return fmt.Errorf("failed to create wgctrl client: %v", err)
-		}
-		defer client.Close()
-
-		if err := client.ConfigureDevice(wgIfaceName, *wgConfig); err != nil {
-			return fmt.Errorf("failed to configure wireguard interface%q: %v", wgIfaceName, err)
+			return fmt.Errorf("failed to get default route: %w", err)
 		}
 
-		// 6. Set MTU before bringing the interface up.
-		if err := netlink.LinkSetMTU(wgLink, wgMTU); err != nil {
-			return fmt.Errorf("failed to set MTU on wireguard interface: %v", err)
+		// 5. Configure the WireGuard interface and set it as the default route
+		if err := setupWG(wgLink, wgIfaceName, wgConfig, wgAddr); err != nil {
+			return err
+		}
+		if err := replaceDefaultRoute(wgLink); err != nil {
+			return err
 		}
 
-		// 7. Bring the interface up
-		if err := netlink.LinkSetUp(wgLink); err != nil {
-			return fmt.Errorf("failed to set link up: %v", err)
-		}
-
-		// Obtain the current default interface
-
-		// Obtain the current default route from the previous results
-		// var defaultRoute *cnitypes.Route
-		// for _, route := range conf.PrevResultV1.Routes {
-		// 	if route.Dst.String() == "0.0.0.0/0" {
-		// 		defaultRoute = route
-		// 	}
-		// }
-		// if defaultRoute == nil {
-		// 	return fmt.Errorf("failed to find default route in previous results")
-		// }
-
-		// defaultRoute, err := mynet.DefaultRoute(netNSName)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to get default route: %w", err)
-		// }
-		// log.Debug("default route", "route", defaultRoute.LinkIndex, "gw", defaultRoute.Gw)
-
-		// Add routes for peer endpoints through the current default interface
-		// for _, peer := range wgConfig.Peers {
-		// 	log.Debug("adding peer route", "peer", peer.Endpoint.IP.String())
-		// 	_, peerIP, err := net.ParseCIDR(peer.Endpoint.IP.String() + "/32")
-		// 	if err != nil {
-		// 		return fmt.Errorf("failed to parse peer IP: %w", err)
-		// 	}
-		// 	err = netlink.RouteAdd(&netlink.Route{
-		// 		LinkIndex: defaultRoute.LinkIndex,
-		// 		Dst:       peerIP,
-		// 		Gw:        defaultRoute.Gw,
-		// 	})
-		// 	if err != nil {
-		// 		return fmt.Errorf("failed to add route for peer %q: %v", peer.Endpoint.IP.String(), err)
-		// 	}
-		// }
-
-		// _, defaultDst, _ := net.ParseCIDR("10.2.0.1/32")
-		// route := &netlink.Route{
-		// 	LinkIndex: wgLink.Attrs().Index,
-		// 	Dst:       defaultDst,
-		// 	Scope:     netlink.SCOPE_LINK,
-		// }
-
-		// // Replace the default route
-		// if err := netlink.RouteReplace(route); err != nil {
-		// 	return e("failed to replace route", err)
-		// }
-		// netlink.RouteReplace()
-
-		_, defaultDst, err := net.ParseCIDR("0.0.0.0/0")
-		if err != nil {
-			return fmt.Errorf("failed to parse default route CIDR: %v", err)
-		}
-		newDefaultRoute := netlink.Route{
-			LinkIndex: wgLink.Attrs().Index,
-			Dst:       defaultDst,
-			Scope:     netlink.SCOPE_LINK,
-		}
-		if err := netlink.RouteReplace(&newDefaultRoute); err != nil {
-			return fmt.Errorf("failed to replace default route: %v", err)
-		}
-		// // Replace the default route
-		// if err := mynet.ReplaceDefaultRoute(args.Netns, ifaceName); err != nil {
-		// 	return fmt.Errorf("failed to replace default route: %v", err)
-		// }
-
-		return nil
+		return addSplitTunnelRoutes(origDefault, splitTunnelCIDRs)
 	})
-	// return err
 }
 
 // Sets up a Wireguard interface directly inside the container network namespace.
 // This creates a Wireguard interface that routes through the container's original interface.
 // The original interface must be left intact for connectivity.
-func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr, log *slog.Logger) error {
+func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr, splitTunnelCIDRs []*net.IPNet, log *slog.Logger) error {
 
 	// 1. Obtain handle to the destination (container) network namespace
 	containerNS, err := ns.GetNS(netNSName)
@@ -208,11 +86,6 @@ func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config
 		if err := netlink.LinkAdd(wgLink); err != nil {
 			return fmt.Errorf("failed to add wireguard link to container network namespace: %v", err)
 		}
-
-		// wgLink, err := netlink.LinkByName(wgIfaceName)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to get link: %v", err)
-		// }
 
 		// 3. Add routes for peer endpoints through the current default interface
 		// This ensure tunnel traffic can exit the container
@@ -236,34 +109,21 @@ func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config
 			}
 		}
 
-		// 4. Finish setting up the wireguard interface
-		return setupWG(wgLink, wgIfaceName, wgConfig, wgAddr)
+		// 4. Configure the WireGuard interface and set it as the default route
+		if err := setupWG(wgLink, wgIfaceName, wgConfig, wgAddr); err != nil {
+			return err
+		}
+		if err := replaceDefaultRoute(wgLink); err != nil {
+			return err
+		}
 
-		// _, defaultDst, _ := net.ParseCIDR("10.2.0.1/32")
-		// route := &netlink.Route{
-		// 	LinkIndex: wgLink.Attrs().Index,
-		// 	Dst:       defaultDst,
-		// 	Scope:     netlink.SCOPE_LINK,
-		// }
-
-		// // Replace the default route
-		// if err := netlink.RouteReplace(route); err != nil {
-		// 	return e("failed to replace route", err)
-		// }
-		// netlink.RouteReplace()
-
-		// // Replace the default route
-		// if err := mynet.ReplaceDefaultRoute(args.Netns, ifaceName); err != nil {
-		// 	return fmt.Errorf("failed to replace default route: %v", err)
-		// }
-
-		// return nil
+		return addSplitTunnelRoutes(defaultRoute, splitTunnelCIDRs)
 	})
-	// return err
 }
 
-// setupWG sets up wireguard interface in the container network namespace.
-// This is always run in containerNS.Do()
+// setupWG configures a WireGuard interface: assigns the address, loads keys/peers,
+// sets the MTU, and brings the link up. Route management is left to the caller.
+// Must be called from within the target network namespace.
 func setupWG(wgLink *netlink.Wireguard, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr) error {
 
 	// 1. Assign IP address to the wireguard interface
@@ -292,20 +152,34 @@ func setupWG(wgLink *netlink.Wireguard, wgIfaceName string, wgConfig *wgtypes.Co
 		return fmt.Errorf("failed to set link up: %v", err)
 	}
 
-	// 5. Set wireguard interface as default route
+	return nil
+}
+
+func replaceDefaultRoute(wgLink *netlink.Wireguard) error {
 	_, defaultDst, err := net.ParseCIDR("0.0.0.0/0")
 	if err != nil {
 		return fmt.Errorf("failed to parse default route CIDR: %v", err)
 	}
-	newDefaultRoute := netlink.Route{
+	if err := netlink.RouteReplace(&netlink.Route{
 		LinkIndex: wgLink.Attrs().Index,
 		Dst:       defaultDst,
 		Scope:     netlink.SCOPE_LINK,
-	}
-	if err := netlink.RouteReplace(&newDefaultRoute); err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to replace default route: %v", err)
 	}
+	return nil
+}
 
+func addSplitTunnelRoutes(origDefault *netlink.Route, cidrs []*net.IPNet) error {
+	for _, cidr := range cidrs {
+		if err := netlink.RouteAdd(&netlink.Route{
+			LinkIndex: origDefault.LinkIndex,
+			Dst:       cidr,
+			Gw:        origDefault.Gw,
+		}); err != nil {
+			return fmt.Errorf("failed to add split-tunnel route for %s: %v", cidr, err)
+		}
+	}
 	return nil
 }
 

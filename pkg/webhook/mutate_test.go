@@ -2,15 +2,43 @@ package webhook
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/bartlettc22/gopher-cni/pkg/cni"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// webhookMockClient implements kubernetes.Client for webhook tests
+type webhookMockClient struct {
+	secrets map[string]*corev1.Secret
+}
+
+func (m *webhookMockClient) GetPod(_ context.Context, namespace, name string) (*corev1.Pod, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *webhookMockClient) GetSecret(_ context.Context, namespace, name string) (*corev1.Secret, error) {
+	key := namespace + "/" + name
+	if s, ok := m.secrets[key]; ok {
+		return s, nil
+	}
+	return nil, fmt.Errorf("secret %q not found", key)
+}
+
+func newWebhookMockClient(namespace, name string, data map[string][]byte) *webhookMockClient {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       data,
+	}
+	return &webhookMockClient{secrets: map[string]*corev1.Secret{namespace + "/" + name: secret}}
+}
 
 // TestMutateHandler_InitContainerInjection tests that init containers are injected correctly
 func TestMutateHandler_InitContainerInjection(t *testing.T) {
@@ -565,5 +593,70 @@ func TestMutateHandler_InitContainerConfiguration(t *testing.T) {
 
 	if len(initContainer.Command) != 1 || initContainer.Command[0] != "/gopher" {
 		t.Errorf("expected init container command to be ['/gopher'], got %v", initContainer.Command)
+	}
+}
+
+func TestGetDNSServersFromSecret(t *testing.T) {
+	// A syntactically valid WireGuard private key (32 zero bytes, base64-encoded)
+	const validKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+	wgConf := func(dns string) []byte {
+		conf := "[Interface]\nPrivateKey = " + validKey + "\nAddress = 10.0.0.1/24\n"
+		if dns != "" {
+			conf += "DNS = " + dns + "\n"
+		}
+		return []byte(conf)
+	}
+
+	tests := []struct {
+		name      string
+		wgConf    []byte
+		expectDNS []string
+	}{
+		{
+			name:      "IPv4 only — all returned",
+			wgConf:    wgConf("1.1.1.1, 8.8.8.8"),
+			expectDNS: []string{"1.1.1.1", "8.8.8.8"},
+		},
+		{
+			name:      "IPv6 only — none returned",
+			wgConf:    wgConf("2606:4700:4700::1111"),
+			expectDNS: nil,
+		},
+		{
+			name:      "mixed IPv4 and IPv6 — only IPv4 returned",
+			wgConf:    wgConf("1.1.1.1, 2606:4700:4700::1111, 8.8.8.8"),
+			expectDNS: []string{"1.1.1.1", "8.8.8.8"},
+		},
+		{
+			name:      "no DNS field — returns nil",
+			wgConf:    wgConf(""),
+			expectDNS: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newWebhookMockClient("default", "wg-secret", map[string][]byte{
+				cni.SecretKeyWGConf: tt.wgConf,
+			})
+			config := DefaultWebhookConfig()
+			config.KubeClient = client
+			handler := NewMutateHandler(config)
+
+			got, err := handler.getDNSServersFromSecret("default", "wg-secret")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(got) != len(tt.expectDNS) {
+				t.Fatalf("expected %v, got %v", tt.expectDNS, got)
+			}
+			for i, addr := range got {
+				if addr != tt.expectDNS[i] {
+					t.Errorf("index %d: expected %s, got %s", i, tt.expectDNS[i], addr)
+				}
+			}
+		})
 	}
 }

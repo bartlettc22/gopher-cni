@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"slices"
+	"strings"
 
 	"github.com/bartlettc22/gopher-cni/pkg/cni"
 	"github.com/bartlettc22/gopher-cni/pkg/kubernetes"
@@ -97,13 +98,32 @@ func (p CNIProvider) PodNamespace() string {
 }
 
 func (p CNIProvider) CNIMode() string {
-	mode := cni.CNIModePodOrigin
-	if p.pod.Annotations != nil {
-		if val, ok := p.pod.Annotations[cni.AnnotationCNIMode]; ok && val != "" {
-			mode = val
-		}
+	if mode := fetchAnnotation(p.pod, cni.AnnotationCNIMode); mode != "" {
+		return mode
 	}
-	return mode
+	return cni.CNIModePodOrigin
+}
+
+// SplitTunnelCIDRs parses the split-tunnel-cidrs annotation into a list of networks
+// that should be routed via the original default interface instead of WireGuard.
+func (p CNIProvider) SplitTunnelCIDRs() ([]*net.IPNet, error) {
+	raw := fetchAnnotation(p.pod, cni.AnnotationSplitTunnelCIDRs)
+	if raw == "" {
+		return nil, nil
+	}
+	var cidrs []*net.IPNet
+	for _, s := range strings.Split(raw, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		_, cidr, err := net.ParseCIDR(s)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR %q in annotation %s: %w", s, cni.AnnotationSplitTunnelCIDRs, err)
+		}
+		cidrs = append(cidrs, cidr)
+	}
+	return cidrs, nil
 }
 
 // fetchLabel returns the value of the label if it exists in the pod's labels

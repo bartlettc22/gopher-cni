@@ -347,10 +347,12 @@ func (h *MutateHandler) getDNSServersFromSecret(namespace, secretName string) ([
 		return nil, fmt.Errorf("failed to parse wireguard config: %w", err)
 	}
 
-	// Convert DNS IPs to strings
-	dnsServers := make([]string, len(wgConfig.DNS))
-	for i, ip := range wgConfig.DNS {
-		dnsServers[i] = ip.String()
+	// Convert IPv4 DNS IPs to strings; IPv6 is skipped as tunnel DNS is IPv4-only
+	var dnsServers []string
+	for _, ip := range wgConfig.DNS {
+		if ip.To4() != nil {
+			dnsServers = append(dnsServers, ip.String())
+		}
 	}
 
 	return dnsServers, nil
