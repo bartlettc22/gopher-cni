@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0]
+
+### Fixed
+- Integration test conflist-clean check now greps for `"type": "gopher-cni"` (the literal JSON plugin-type field) instead of the bare string `gopher-cni`, preventing false positives from the cluster name appearing in the Calico conflist
+- Integration test conflist-clean check now polls with a 30-second timeout instead of asserting once, handling the brief bind-mount visibility lag in k3d after pod exit
+
+### Added
+- Integration test assertion that the underlying CNI conflist (e.g. Calico's `10-calico.conflist`) still exists after uninstall — gopher-cni should strip its plugin entry, not delete the file
+- Taskfile task descriptions
+
 ## [0.4.0]
 
 ### Fixed
