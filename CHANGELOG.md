@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Refactored WireGuard network setup code: removed dead code, eliminated duplicate logic, and separated interface configuration from route management
+- Webhook DNS injection now filters to IPv4 addresses only, as IPv6 tunnel DNS is not currently supported
 
 ## [0.5.0]
 
