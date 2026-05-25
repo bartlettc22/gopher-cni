@@ -32,6 +32,10 @@ const (
 	// that should be routed via the default interface instead of the WireGuard tunnel.
 	AnnotationSplitTunnelCIDRs = LabelPrefix + "split-tunnel-cidrs"
 
+	// AnnotationSplitTunnelOverlap permits split-tunnel CIDRs that are less specific than
+	// a WireGuard address or DNS server but still overlap. Set to "allow" to enable.
+	AnnotationSplitTunnelOverlap = LabelPrefix + "split-tunnel-overlap"
+
 	// CNIModePodOrigin is the pod-origin CNI mode
 	CNIModePodOrigin = "pod-origin"
 

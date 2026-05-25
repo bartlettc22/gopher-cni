@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"net"
 	"slices"
-	"strings"
 
 	"github.com/bartlettc22/gopher-cni/pkg/cni"
 	"github.com/bartlettc22/gopher-cni/pkg/kubernetes"
+	"github.com/bartlettc22/gopher-cni/pkg/utils"
 	"github.com/containernetworking/cni/pkg/skel"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 	v1 "k8s.io/api/core/v1"
@@ -75,7 +75,7 @@ func (p CNIProvider) FetchRawWireguardConfig() ([]byte, error) {
 	if !slices.Contains(p.excludeNamespaces, p.pod.GetNamespace()) {
 		if enabled := fetchLabel(p.pod, cni.LabelEnabled); enabled == "true" {
 			if secretName := fetchAnnotation(p.pod, cni.AnnotationWGConfSecret); secretName != "" {
-				return fetchSecretKey(p.client, p.PodNamespace(), secretName, cni.SecretKeyWGConf)
+				return p.client.FetchSecretKey(context.Background(), p.PodNamespace(), secretName, cni.SecretKeyWGConf)
 			} else {
 				return nil, fmt.Errorf("missing required annotation: %s must specify a secret name", cni.AnnotationWGConfSecret)
 			}
@@ -97,6 +97,10 @@ func (p CNIProvider) PodNamespace() string {
 	return p.pod.GetNamespace()
 }
 
+func (p CNIProvider) SplitTunnelOverlap() string {
+	return fetchAnnotation(p.pod, cni.AnnotationSplitTunnelOverlap)
+}
+
 func (p CNIProvider) CNIMode() string {
 	if mode := fetchAnnotation(p.pod, cni.AnnotationCNIMode); mode != "" {
 		return mode
@@ -111,19 +115,7 @@ func (p CNIProvider) SplitTunnelCIDRs() ([]*net.IPNet, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	var cidrs []*net.IPNet
-	for _, s := range strings.Split(raw, ",") {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		_, cidr, err := net.ParseCIDR(s)
-		if err != nil {
-			return nil, fmt.Errorf("invalid CIDR %q in annotation %s: %w", s, cni.AnnotationSplitTunnelCIDRs, err)
-		}
-		cidrs = append(cidrs, cidr)
-	}
-	return cidrs, nil
+	return utils.ParseIPOrCIDRList(raw)
 }
 
 // fetchLabel returns the value of the label if it exists in the pod's labels
@@ -144,19 +136,4 @@ func fetchAnnotation(pod *v1.Pod, annotation string) string {
 		}
 	}
 	return ""
-}
-
-// fetchSecretKey returns the value of the key in the secret if it exists
-// Returns an error if the secret or key does not exist
-func fetchSecretKey(client kubernetes.Client, namespace, name, key string) ([]byte, error) {
-	secret, err := client.GetSecret(context.TODO(), namespace, name)
-	if err != nil {
-		return nil, err
-	}
-
-	if val, ok := secret.Data[key]; ok {
-		return val, nil
-	}
-
-	return nil, fmt.Errorf("kubernetes secret %s/%s does not contain data in key %q", namespace, name, key)
 }

@@ -40,15 +40,20 @@ func (m *mockClient) GetPod(ctx context.Context, namespace, name string) (*corev
 	return nil, fmt.Errorf("pod %q not found", key)
 }
 
-func (m *mockClient) GetSecret(ctx context.Context, namespace, name string) (*corev1.Secret, error) {
+func (m *mockClient) FetchSecretKey(ctx context.Context, namespace, name, key string) ([]byte, error) {
 	if m.secErr != nil {
 		return nil, m.secErr
 	}
-	key := namespace + "/" + name
-	if secret, exists := m.secrets[key]; exists {
-		return secret, nil
+	k := namespace + "/" + name
+	secret, exists := m.secrets[k]
+	if !exists {
+		return nil, fmt.Errorf("secret %q not found", k)
 	}
-	return nil, fmt.Errorf("secret %q not found", key)
+	val, ok := secret.Data[key]
+	if !ok {
+		return nil, fmt.Errorf("secret %q has no key %q", k, key)
+	}
+	return val, nil
 }
 
 func (m *mockClient) addPod(namespace, name string, labels, annotations map[string]string) {
@@ -360,7 +365,7 @@ func TestFetchRawWireguardConfig_KeyNotInSecret(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Nil(t, config)
-	assert.Contains(t, err.Error(), "does not contain data in key")
+	assert.Contains(t, err.Error(), "no key")
 }
 
 // TestFetchLabel tests the fetchLabel helper function
@@ -425,7 +430,7 @@ func TestFetchLabel(t *testing.T) {
 	}
 }
 
-// TestFetchSecretKey tests the fetchSecretKey function
+// TestFetchSecretKey tests the Client.FetchSecretKey method
 func TestFetchSecretKey(t *testing.T) {
 	secretNamespace := "default"
 	secretName := "test-secret"
@@ -437,7 +442,7 @@ func TestFetchSecretKey(t *testing.T) {
 		secretKey: secretValue,
 	})
 
-	result, err := fetchSecretKey(client, secretNamespace, secretName, secretKey)
+	result, err := client.FetchSecretKey(context.Background(), secretNamespace, secretName, secretKey)
 
 	assert.NoError(t, err)
 	assert.Equal(t, secretValue, result)
@@ -447,7 +452,7 @@ func TestFetchSecretKey(t *testing.T) {
 func TestFetchSecretKey_SecretNotFound(t *testing.T) {
 	client := newMockClient()
 
-	result, err := fetchSecretKey(client, "default", "nonexistent-secret", "config")
+	result, err := client.FetchSecretKey(context.Background(), "default", "nonexistent-secret", "config")
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -460,11 +465,11 @@ func TestFetchSecretKey_KeyNotFound(t *testing.T) {
 		"other-key": []byte("data"),
 	})
 
-	result, err := fetchSecretKey(client, "default", "test-secret", "missing-key")
+	result, err := client.FetchSecretKey(context.Background(), "default", "test-secret", "missing-key")
 
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "does not contain data in key")
+	assert.Contains(t, err.Error(), "no key")
 }
 
 // TestK8sArgs_Parsing tests that K8s args are parsed correctly
@@ -698,12 +703,12 @@ func TestSplitTunnelCIDRs(t *testing.T) {
 		{
 			name:        "invalid CIDR returns error",
 			annotation:  "not-a-cidr",
-			expectError: "invalid CIDR",
+			expectError: "invalid",
 		},
 		{
 			name:        "invalid CIDR in list returns error",
 			annotation:  "192.168.1.0/24,bad",
-			expectError: "invalid CIDR",
+			expectError: "invalid",
 		},
 	}
 

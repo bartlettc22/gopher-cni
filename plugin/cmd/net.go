@@ -20,7 +20,7 @@ const wgMTU = 1420
 // then moving it to the desired namespace.  This creates an isolated Wireguard interface inside the container
 // that is not reliant/connected to the container's original interface.  The original interface is left intact
 // but could safely be removed if not needed.
-func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr, splitTunnelCIDRs []*net.IPNet, log *slog.Logger) error {
+func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddrs []*netlink.Addr, protectedNets []*net.IPNet, splitTunnelCIDRs []*net.IPNet, log *slog.Logger) error {
 
 	// 1. Add the wireguard link (interface) to the current (host) network namespace
 	wgLink := &netlink.Wireguard{
@@ -52,10 +52,13 @@ func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgA
 		}
 
 		// 5. Configure the WireGuard interface and set it as the default route
-		if err := setupWG(wgLink, wgIfaceName, wgConfig, wgAddr); err != nil {
+		if err := setupWG(wgLink, wgIfaceName, wgConfig, wgAddrs); err != nil {
 			return err
 		}
 		if err := replaceDefaultRoute(wgLink); err != nil {
+			return err
+		}
+		if err := addProtectedRoutes(wgLink, protectedNets); err != nil {
 			return err
 		}
 
@@ -66,7 +69,7 @@ func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgA
 // Sets up a Wireguard interface directly inside the container network namespace.
 // This creates a Wireguard interface that routes through the container's original interface.
 // The original interface must be left intact for connectivity.
-func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr, splitTunnelCIDRs []*net.IPNet, log *slog.Logger) error {
+func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgAddrs []*netlink.Addr, protectedNets []*net.IPNet, splitTunnelCIDRs []*net.IPNet, log *slog.Logger) error {
 
 	// 1. Obtain handle to the destination (container) network namespace
 	containerNS, err := ns.GetNS(netNSName)
@@ -110,10 +113,13 @@ func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config
 		}
 
 		// 4. Configure the WireGuard interface and set it as the default route
-		if err := setupWG(wgLink, wgIfaceName, wgConfig, wgAddr); err != nil {
+		if err := setupWG(wgLink, wgIfaceName, wgConfig, wgAddrs); err != nil {
 			return err
 		}
 		if err := replaceDefaultRoute(wgLink); err != nil {
+			return err
+		}
+		if err := addProtectedRoutes(wgLink, protectedNets); err != nil {
 			return err
 		}
 
@@ -124,11 +130,13 @@ func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config
 // setupWG configures a WireGuard interface: assigns the address, loads keys/peers,
 // sets the MTU, and brings the link up. Route management is left to the caller.
 // Must be called from within the target network namespace.
-func setupWG(wgLink *netlink.Wireguard, wgIfaceName string, wgConfig *wgtypes.Config, wgAddr *netlink.Addr) error {
+func setupWG(wgLink *netlink.Wireguard, wgIfaceName string, wgConfig *wgtypes.Config, wgAddrs []*netlink.Addr) error {
 
-	// 1. Assign IP address to the wireguard interface
-	if err := netlink.AddrAdd(wgLink, wgAddr); err != nil {
-		return fmt.Errorf("failed to add addr %q: %v", wgAddr.String(), err)
+	// 1. Assign all IPv4 addresses to the wireguard interface
+	for _, addr := range wgAddrs {
+		if err := netlink.AddrAdd(wgLink, addr); err != nil {
+			return fmt.Errorf("failed to add addr %q: %v", addr.String(), err)
+		}
 	}
 
 	// 2. Configure WireGuard specifics (keys, peers, etc.)
@@ -166,6 +174,21 @@ func replaceDefaultRoute(wgLink *netlink.Wireguard) error {
 		Scope:     netlink.SCOPE_LINK,
 	}); err != nil {
 		return fmt.Errorf("failed to replace default route: %v", err)
+	}
+	return nil
+}
+
+// addProtectedRoutes installs explicit routes for WireGuard addresses and DNS servers
+// via the WireGuard interface, ensuring they are not captured by any split-tunnel routes.
+func addProtectedRoutes(wgLink *netlink.Wireguard, nets []*net.IPNet) error {
+	for _, n := range nets {
+		if err := netlink.RouteAdd(&netlink.Route{
+			LinkIndex: wgLink.Attrs().Index,
+			Dst:       n,
+			Scope:     netlink.SCOPE_LINK,
+		}); err != nil {
+			return fmt.Errorf("failed to add protected route for %s: %v", n, err)
+		}
 	}
 	return nil
 }
