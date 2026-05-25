@@ -505,12 +505,12 @@ func TestValidateSplitTunnelOverlap(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		wgConf        []byte
-		splitCIDRs    string
-		overlapAnnot  string
-		expectErrors  bool
-		alwaysReject  bool // true if overlap=allow should still fail
+		name         string
+		wgConf       []byte
+		splitCIDRs   string
+		overlapAnnot string
+		expectErrors bool
+		alwaysReject bool // true if overlap=allow should still fail
 	}{
 		{
 			name:         "no overlap - allowed",

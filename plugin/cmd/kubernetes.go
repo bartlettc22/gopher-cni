@@ -137,4 +137,3 @@ func fetchAnnotation(pod *v1.Pod, annotation string) string {
 	}
 	return ""
 }
-

@@ -13,7 +13,6 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
-
 // ParseConfig parses a WireGuard INI-style configuration file and returns a Config
 func ParseConfig(data []byte) (*Config, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
