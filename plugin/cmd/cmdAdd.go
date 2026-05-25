@@ -17,8 +17,8 @@ import (
 
 // Overrideable functions for unit tests
 var newKubeClient = kubernetes.NewClientFromConfigFile
-var setupViaHost func(string, string, *wgtypes.Config, *netlink.Addr, []*net.IPNet, *slog.Logger) error = setupWGViaHost
-var setupViaContainer func(string, string, *wgtypes.Config, *netlink.Addr, []*net.IPNet, *slog.Logger) error = setupWGViaContainer
+var setupViaHost func(string, string, *wgtypes.Config, []*netlink.Addr, []*net.IPNet, []*net.IPNet, *slog.Logger) error = setupWGViaHost
+var setupViaContainer func(string, string, *wgtypes.Config, []*netlink.Addr, []*net.IPNet, []*net.IPNet, *slog.Logger) error = setupWGViaContainer
 
 func Add(args *skel.CmdArgs) (err error) {
 
@@ -68,10 +68,17 @@ func Add(args *skel.CmdArgs) (err error) {
 			return e(log, "failed to unmarshal wireguard config", err)
 		}
 
-		wgAddr, err := netlink.ParseAddr(wgConfig.Address.String())
-		if err != nil {
-			return e(log, "failed to parse wireguard address", err)
+		// Parse all WireGuard interface addresses for assignment to the interface
+		var wgAddrs []*netlink.Addr
+		for _, ipnet := range wgConfig.Addresses {
+			addr, err := netlink.ParseAddr(ipnet.String())
+			if err != nil {
+				return e(log, "failed to parse wireguard address", err)
+			}
+			wgAddrs = append(wgAddrs, addr)
 		}
+
+		protectedNets := wgConfig.ProtectedNets()
 
 		splitTunnelCIDRs, err := k8s.SplitTunnelCIDRs()
 		if err != nil {
@@ -80,11 +87,11 @@ func Add(args *skel.CmdArgs) (err error) {
 
 		switch k8s.CNIMode() {
 		case cni.CNIModeHostOrigin:
-			if err := setupViaHost(args.Netns, cni.InterfaceName, wgConfig.WGConfig, wgAddr, splitTunnelCIDRs, log); err != nil {
+			if err := setupViaHost(args.Netns, cni.InterfaceName, wgConfig.WGConfig, wgAddrs, protectedNets, splitTunnelCIDRs, log); err != nil {
 				return e(log, "failed to setup network (host-origin)", err)
 			}
 		case cni.CNIModePodOrigin:
-			if err := setupViaContainer(args.Netns, cni.InterfaceName, wgConfig.WGConfig, wgAddr, splitTunnelCIDRs, log); err != nil {
+			if err := setupViaContainer(args.Netns, cni.InterfaceName, wgConfig.WGConfig, wgAddrs, protectedNets, splitTunnelCIDRs, log); err != nil {
 				return e(log, "failed to setup network (pod-origin)", err)
 			}
 		default:

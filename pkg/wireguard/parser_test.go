@@ -50,12 +50,12 @@ ListenPort = 51820`,
 				if cfg.WGConfig.PrivateKey == nil {
 					t.Error("expected private key to be set")
 				}
-				if cfg.Address == nil {
-					t.Error("expected address to be set")
+				if len(cfg.Addresses) != 1 {
+					t.Fatalf("expected 1 address, got %d", len(cfg.Addresses))
 				}
 				// net.ParseCIDR normalizes the IP to the network address
-				if cfg.Address != nil && cfg.Address.String() != "10.0.0.0/24" {
-					t.Errorf("expected address 10.0.0.0/24, got %s", cfg.Address.String())
+				if cfg.Addresses[0].String() != "10.0.0.0/24" {
+					t.Errorf("expected address 10.0.0.0/24, got %s", cfg.Addresses[0].String())
 				}
 			},
 		},
@@ -168,32 +168,35 @@ AllowedIPs = 10.0.0.2/32`,
 			},
 		},
 		{
-			name: "multiple comma-separated addresses picks first ipv4",
+			name: "multiple comma-separated addresses collects all IPv4",
 			input: `[Interface]
 PrivateKey = ` + testPrivateKey + `
 Address = 10.0.0.1/24, 10.0.0.2/32`,
 			wantErr: false,
 			check: func(t *testing.T, cfg *Config) {
-				if cfg.Address == nil {
-					t.Fatal("expected address to be set")
+				if len(cfg.Addresses) != 2 {
+					t.Fatalf("expected 2 addresses, got %d", len(cfg.Addresses))
 				}
-				if cfg.Address.String() != "10.0.0.0/24" {
-					t.Errorf("expected first address 10.0.0.0/24, got %s", cfg.Address.String())
+				if cfg.Addresses[0].String() != "10.0.0.0/24" {
+					t.Errorf("expected first address 10.0.0.0/24, got %s", cfg.Addresses[0].String())
+				}
+				if cfg.Addresses[1].String() != "10.0.0.2/32" {
+					t.Errorf("expected second address 10.0.0.2/32, got %s", cfg.Addresses[1].String())
 				}
 			},
 		},
 		{
-			name: "ipv6 address before ipv4 picks first ipv4",
+			name: "ipv6 address before ipv4 skips ipv6",
 			input: `[Interface]
 PrivateKey = ` + testPrivateKey + `
 Address = fd00::1/128, 10.0.0.1/24`,
 			wantErr: false,
 			check: func(t *testing.T, cfg *Config) {
-				if cfg.Address == nil {
-					t.Fatal("expected address to be set")
+				if len(cfg.Addresses) != 1 {
+					t.Fatalf("expected 1 IPv4 address, got %d", len(cfg.Addresses))
 				}
-				if cfg.Address.String() != "10.0.0.0/24" {
-					t.Errorf("expected first IPv4 address 10.0.0.0/24, got %s", cfg.Address.String())
+				if cfg.Addresses[0].String() != "10.0.0.0/24" {
+					t.Errorf("expected address 10.0.0.0/24, got %s", cfg.Addresses[0].String())
 				}
 			},
 		},

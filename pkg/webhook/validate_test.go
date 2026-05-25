@@ -492,6 +492,135 @@ func TestValidateHandler_AnnotationValidation(t *testing.T) {
 	}
 }
 
+// TestValidateSplitTunnelOverlap tests overlap detection between split-tunnel CIDRs and protected nets
+func TestValidateSplitTunnelOverlap(t *testing.T) {
+	const validKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+	wgConf := func(address, dns string) []byte {
+		conf := "[Interface]\nPrivateKey = " + validKey + "\nAddress = " + address + "\n"
+		if dns != "" {
+			conf += "DNS = " + dns + "\n"
+		}
+		return []byte(conf)
+	}
+
+	tests := []struct {
+		name          string
+		wgConf        []byte
+		splitCIDRs    string
+		overlapAnnot  string
+		expectErrors  bool
+		alwaysReject  bool // true if overlap=allow should still fail
+	}{
+		{
+			name:         "no overlap - allowed",
+			wgConf:       wgConf("10.2.0.2/32", "10.2.0.1"),
+			splitCIDRs:   "192.168.1.0/24",
+			expectErrors: false,
+		},
+		{
+			name:         "split CIDR same specificity as WG address - always reject",
+			wgConf:       wgConf("10.2.0.2/32", ""),
+			splitCIDRs:   "10.2.0.2/32",
+			expectErrors: true,
+			alwaysReject: true,
+		},
+		{
+			name:         "split CIDR more specific than WG address subnet - always reject",
+			wgConf:       wgConf("10.2.0.0/24", ""),
+			splitCIDRs:   "10.2.0.0/25",
+			expectErrors: true,
+			alwaysReject: true,
+		},
+		{
+			name:         "split CIDR less specific than WG address - reject by default",
+			wgConf:       wgConf("10.2.0.2/32", ""),
+			splitCIDRs:   "10.0.0.0/8",
+			expectErrors: true,
+			alwaysReject: false,
+		},
+		{
+			name:         "split CIDR less specific but overlap=allow - permitted",
+			wgConf:       wgConf("10.2.0.2/32", ""),
+			splitCIDRs:   "10.0.0.0/8",
+			overlapAnnot: "allow",
+			expectErrors: false,
+		},
+		{
+			name:         "split CIDR same specificity as DNS /32 - always reject",
+			wgConf:       wgConf("10.2.0.2/32", "10.2.0.1"),
+			splitCIDRs:   "10.2.0.1/32",
+			expectErrors: true,
+			alwaysReject: true,
+		},
+		{
+			name:         "split CIDR less specific overlaps DNS - reject by default",
+			wgConf:       wgConf("10.2.0.2/32", "10.2.0.1"),
+			splitCIDRs:   "10.0.0.0/8",
+			expectErrors: true,
+			alwaysReject: false,
+		},
+		{
+			name:         "split CIDR less specific overlaps DNS with overlap=allow - permitted",
+			wgConf:       wgConf("192.168.100.1/32", "10.2.0.1"),
+			splitCIDRs:   "10.0.0.0/8",
+			overlapAnnot: "allow",
+			expectErrors: false,
+		},
+		{
+			name:         "split CIDR same specificity overlaps DNS with overlap=allow - still rejected",
+			wgConf:       wgConf("192.168.100.1/32", "10.2.0.1"),
+			splitCIDRs:   "10.2.0.1/32",
+			overlapAnnot: "allow",
+			expectErrors: true,
+			alwaysReject: true,
+		},
+		{
+			name:         "multiple split CIDRs one overlaps - rejected",
+			wgConf:       wgConf("10.2.0.2/32", ""),
+			splitCIDRs:   "192.168.1.0/24, 10.2.0.2/32",
+			expectErrors: true,
+			alwaysReject: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newWebhookMockClient("default", "wg-secret", map[string][]byte{
+				cni.SecretKeyWGConf: tt.wgConf,
+			})
+			config := DefaultWebhookConfig()
+			config.KubeClient = client
+			handler := NewValidateHandler(config)
+
+			annotations := map[string]string{}
+			if tt.overlapAnnot != "" {
+				annotations[cni.AnnotationSplitTunnelOverlap] = tt.overlapAnnot
+			}
+
+			errs := handler.validateSplitTunnelOverlap("default", tt.splitCIDRs, "wg-secret", annotations)
+
+			if tt.expectErrors && len(errs) == 0 {
+				t.Errorf("expected validation errors, got none")
+			}
+			if !tt.expectErrors && len(errs) > 0 {
+				t.Errorf("expected no errors, got: %v", errs)
+			}
+
+			// Verify that alwaysReject cases are rejected even with overlap=allow
+			if tt.alwaysReject {
+				annotationsWithAllow := map[string]string{
+					cni.AnnotationSplitTunnelOverlap: "allow",
+				}
+				errsWithAllow := handler.validateSplitTunnelOverlap("default", tt.splitCIDRs, "wg-secret", annotationsWithAllow)
+				if len(errsWithAllow) == 0 {
+					t.Errorf("expected rejection even with overlap=allow for same/more-specific overlap")
+				}
+			}
+		})
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || (len(s) > 0 && len(substr) > 0 && stringContains(s, substr)))

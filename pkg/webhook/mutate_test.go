@@ -24,12 +24,17 @@ func (m *webhookMockClient) GetPod(_ context.Context, namespace, name string) (*
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *webhookMockClient) GetSecret(_ context.Context, namespace, name string) (*corev1.Secret, error) {
-	key := namespace + "/" + name
-	if s, ok := m.secrets[key]; ok {
-		return s, nil
+func (m *webhookMockClient) FetchSecretKey(_ context.Context, namespace, name, key string) ([]byte, error) {
+	k := namespace + "/" + name
+	s, ok := m.secrets[k]
+	if !ok {
+		return nil, fmt.Errorf("secret %q not found", k)
 	}
-	return nil, fmt.Errorf("secret %q not found", key)
+	val, ok := s.Data[key]
+	if !ok {
+		return nil, fmt.Errorf("secret %q has no key %q", k, key)
+	}
+	return val, nil
 }
 
 func newWebhookMockClient(namespace, name string, data map[string][]byte) *webhookMockClient {

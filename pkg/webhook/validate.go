@@ -1,14 +1,17 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/bartlettc22/gopher-cni/pkg/cni"
+	"github.com/bartlettc22/gopher-cni/pkg/wireguard"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -123,7 +126,7 @@ func (h *ValidateHandler) validate(ar *admissionv1.AdmissionReview) *admissionv1
 		return response
 	}
 
-	validationErrors := h.validatePodSpec(&pod.Spec, pod.Labels, pod.Annotations)
+	validationErrors := h.validatePodSpec(pod.Namespace, &pod.Spec, pod.Labels, pod.Annotations)
 	if len(validationErrors) > 0 {
 		response.Allowed = false
 		causes := make([]metav1.StatusCause, len(validationErrors))
@@ -160,7 +163,7 @@ func shouldInjectForLabels(labels map[string]string) bool {
 }
 
 // validatePodSpec validates the pod specification
-func (h *ValidateHandler) validatePodSpec(podSpec *corev1.PodSpec, labels map[string]string, annotations map[string]string) []ValidationError {
+func (h *ValidateHandler) validatePodSpec(namespace string, podSpec *corev1.PodSpec, labels map[string]string, annotations map[string]string) []ValidationError {
 	var errors []ValidationError
 
 	validateLogger.Debug("validating pod spec")
@@ -203,6 +206,24 @@ func (h *ValidateHandler) validatePodSpec(podSpec *corev1.PodSpec, labels map[st
 		}
 	}
 
+	// Validate split-tunnel-overlap annotation if present
+	if overlap, ok := annotations[cni.AnnotationSplitTunnelOverlap]; ok && overlap != "" {
+		if overlap != "allow" {
+			errors = append(errors, ValidationError{
+				Field:   cni.AnnotationSplitTunnelOverlap,
+				Message: fmt.Sprintf("invalid value '%s': must be 'allow'", overlap),
+			})
+		}
+	}
+
+	// Validate split-tunnel CIDR overlap against WireGuard addresses and DNS servers
+	if splitCIDRs, ok := annotations[cni.AnnotationSplitTunnelCIDRs]; ok && splitCIDRs != "" {
+		if secretName := annotations[cni.AnnotationWGConfSecret]; secretName != "" && h.Config.KubeClient != nil {
+			overlapErrors := h.validateSplitTunnelOverlap(namespace, splitCIDRs, secretName, annotations)
+			errors = append(errors, overlapErrors...)
+		}
+	}
+
 	// Validate host network mode
 	if podSpec.HostNetwork {
 		errors = append(errors, ValidationError{
@@ -217,4 +238,84 @@ func (h *ValidateHandler) validatePodSpec(podSpec *corev1.PodSpec, labels map[st
 // isValidBoolString checks if a string is a valid boolean representation
 func isValidBoolString(s string) bool {
 	return s == "true" || s == "false"
+}
+
+// validateSplitTunnelOverlap checks split-tunnel CIDRs against WireGuard addresses and DNS servers.
+// Two-tier rules:
+//   - Same or more specific than a protected net → always reject (explicit route would lose)
+//   - Less specific but overlapping → reject unless split-tunnel-overlap=allow
+func (h *ValidateHandler) validateSplitTunnelOverlap(namespace, splitCIDRsRaw, secretName string, annotations map[string]string) []ValidationError {
+	var errors []ValidationError
+
+	// Parse split-tunnel CIDRs from annotation
+	var splitNets []*net.IPNet
+	for _, s := range strings.Split(splitCIDRsRaw, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		_, cidr, err := net.ParseCIDR(s)
+		if err != nil {
+			errors = append(errors, ValidationError{
+				Field:   cni.AnnotationSplitTunnelCIDRs,
+				Message: fmt.Sprintf("invalid CIDR %q: %v", s, err),
+			})
+			continue
+		}
+		splitNets = append(splitNets, cidr)
+	}
+	if len(errors) > 0 {
+		return errors
+	}
+
+	// Fetch WireGuard config from secret
+	wgConfData, err := h.Config.KubeClient.FetchSecretKey(context.TODO(), namespace, secretName, cni.SecretKeyWGConf)
+	if err != nil {
+		// Secret may not exist yet at admission time; skip overlap check
+		validateLogger.Debug("could not fetch wgconf secret for overlap validation", "error", err)
+		return nil
+	}
+	wgConfig, err := wireguard.ParseConfig(wgConfData)
+	if err != nil {
+		validateLogger.Debug("could not parse wireguard config for overlap validation", "error", err)
+		return nil
+	}
+
+	protectedNets := wgConfig.ProtectedNets()
+
+	overlapAllowed := annotations[cni.AnnotationSplitTunnelOverlap] == "allow"
+
+	for _, split := range splitNets {
+		splitOnes, _ := split.Mask.Size()
+		for _, prot := range protectedNets {
+			protOnes, _ := prot.Mask.Size()
+
+			// Check for any overlap
+			if !split.Contains(prot.IP) && !prot.Contains(split.IP) {
+				continue
+			}
+
+			if splitOnes >= protOnes {
+				// Same or more specific: explicit route via gcni0 would lose; always reject
+				errors = append(errors, ValidationError{
+					Field: cni.AnnotationSplitTunnelCIDRs,
+					Message: fmt.Sprintf(
+						"split-tunnel CIDR %s overlaps with protected net %s and is equally or more specific; traffic to %s would bypass WireGuard",
+						split, prot, prot.IP,
+					),
+				})
+			} else if !overlapAllowed {
+				// Less specific: explicit route wins via longest-prefix-match, but reject by default
+				errors = append(errors, ValidationError{
+					Field: cni.AnnotationSplitTunnelCIDRs,
+					Message: fmt.Sprintf(
+						"split-tunnel CIDR %s overlaps with protected net %s; set %s=allow to permit this overlap",
+						split, prot, cni.AnnotationSplitTunnelOverlap,
+					),
+				})
+			}
+		}
+	}
+
+	return errors
 }

@@ -15,7 +15,7 @@ import (
 // This allows for mocking in tests
 type Client interface {
 	GetPod(ctx context.Context, namespace, name string) (*v1.Pod, error)
-	GetSecret(ctx context.Context, namespace, name string) (*v1.Secret, error)
+	FetchSecretKey(ctx context.Context, namespace, name, key string) ([]byte, error)
 }
 
 type KubeClient struct {
@@ -26,8 +26,15 @@ func (k KubeClient) GetPod(ctx context.Context, namespace, name string) (*v1.Pod
 	return k.client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 }
 
-func (k KubeClient) GetSecret(ctx context.Context, namespace, name string) (*v1.Secret, error) {
-	return k.client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+func (k KubeClient) FetchSecretKey(ctx context.Context, namespace, name, key string) ([]byte, error) {
+	secret, err := k.client.CoreV1().Secrets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if val, ok := secret.Data[key]; ok {
+		return val, nil
+	}
+	return nil, fmt.Errorf("kubernetes secret %s/%s does not contain data in key %q", namespace, name, key)
 }
 
 // NewClientFromConfigFile returns a Kubernetes client from the given kubeconfig file

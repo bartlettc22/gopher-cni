@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0]
+
+### Added
+- Protected routes: WireGuard interface addresses and DNS servers are now installed as explicit routes via the WireGuard interface, preventing split-tunnel CIDRs from accidentally capturing that traffic
+- `gopher.cni/split-tunnel-overlap` annotation: set to `allow` to permit split-tunnel CIDRs that are less specific than a WireGuard address or DNS server; same/more-specific overlaps are always rejected by the validating webhook
+- Validating webhook now enforces split-tunnel CIDR overlap rules against the WireGuard config secret at admission time
+- WireGuard config parser now assigns all IPv4 addresses from the `[Interface] Address` block to the WireGuard interface (previously only the first was used)
+
 ## [0.6.0]
 
 ### Added

@@ -329,19 +329,11 @@ func (h *MutateHandler) getDNSServersFromSecret(namespace, secretName string) ([
 		return nil, fmt.Errorf("kubernetes client not configured")
 	}
 
-	// Read the secret
-	secret, err := h.Config.KubeClient.GetSecret(context.TODO(), namespace, secretName)
+	wgConfData, err := h.Config.KubeClient.FetchSecretKey(context.TODO(), namespace, secretName, cni.SecretKeyWGConf)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret: %w", err)
+		return nil, fmt.Errorf("failed to get wireguard config secret: %w", err)
 	}
 
-	// Get the wg0.conf data from the secret
-	wgConfData, ok := secret.Data[cni.SecretKeyWGConf]
-	if !ok {
-		return nil, fmt.Errorf("secret does not contain %s key", cni.SecretKeyWGConf)
-	}
-
-	// Parse the WireGuard config
 	wgConfig, err := wireguard.ParseConfig(wgConfData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse wireguard config: %w", err)

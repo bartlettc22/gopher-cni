@@ -16,6 +16,7 @@ The `gopher.cni/enabled` label serves as the primary gate for the Gopher CNI fea
 |`gopher.cni/cni-mode`|Which CNI operation mode to use (see below).  Allowed values: `pod-origin`, `host-origin`|`pod-origin`|
 |`gopher.cni/dns-tunneled`|Whether to tunnel DNS traffic. DNS server address is taken from the WireGuard config. If not specified in the config, no resolvers will be added.|`true`|
 |`gopher.cni/split-tunnel-cidrs`|Comma-separated list of CIDRs to route via the pod's original default interface instead of the WireGuard tunnel. See [Split Tunneling](#split-tunneling) below.|`""`|
+|`gopher.cni/split-tunnel-overlap`|Controls how the webhook handles split-tunnel CIDRs that overlap with WireGuard addresses or DNS servers. Set to `allow` to permit less-specific overlaps. See [Split Tunneling](#split-tunneling) below.|`""`|
 
 
 ### Complete Pod Example
@@ -32,6 +33,7 @@ metadata:
     gopher.cni/dns-tunneled: "true"
     gopher.cni/nat-pmp: "true"
     gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
+    gopher.cni/split-tunnel-overlap: "allow"
 spec:
   containers:
   - name: app
@@ -101,14 +103,36 @@ annotations:
   gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
 ```
 
-A common use case is to keep traffic to cluster-internal networks (e.g. the Kubernetes service CIDR and pod CIDR) routed locally while sending all other traffic through the tunnel:
+A common use case is to keep traffic to cluster-internal networks (e.g. the Kubernetes service CIDR and pod CIDR) routed locally while sending all other traffic through the tunnel. This works in both `pod-origin` and `host-origin` modes.
+
+### Protected Routes
+To guarantee WireGuard addresses and DNS servers are always reachable through the tunnel, the CNI plugin automatically installs explicit routes via the WireGuard interface (`gcni0`) for:
+- Each IPv4 address from the WireGuard `[Interface] Address` block, at its configured prefix length
+- Each IPv4 DNS server from the WireGuard config, as a `/32` host route
+
+These explicit routes take precedence over any less-specific split-tunnel routes via longest-prefix-match.
+
+### Overlap Validation
+The webhook validates split-tunnel CIDRs against the WireGuard addresses and DNS servers from the pod's WireGuard secret. There are two tiers of enforcement:
+
+**Always rejected** — if a split-tunnel CIDR is the same prefix length or more specific than a protected route (a WireGuard address CIDR or a DNS server `/32`), the pod will be rejected unconditionally. In this case, the split-tunnel route would win over the explicit protected route and WireGuard connectivity or DNS tunneling would break.
+
+**Rejected by default, overridable** — if a split-tunnel CIDR merely overlaps with a protected route but is less specific, the pod is rejected by default. The explicit protected routes installed by the CNI plugin will ensure correct routing, but the overlap must be acknowledged explicitly by adding:
 
 ```yaml
 annotations:
-  gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
+  gopher.cni/split-tunnel-cidrs: "10.0.0.0/8"
+  gopher.cni/split-tunnel-overlap: "allow"
 ```
 
-This works in both `pod-origin` and `host-origin` modes.
+For example, with a WireGuard address of `10.2.0.0/24` and DNS server `10.2.0.1`:
+| Split-tunnel CIDR | Overlap type | Result |
+|---|---|---|
+| `192.168.0.0/16` | None | Allowed |
+| `10.0.0.0/8` | Less specific than `/24` and `/32` | Rejected by default; allowed with `split-tunnel-overlap=allow` |
+| `10.2.0.0/24` | Same specificity as WireGuard address | Always rejected |
+| `10.2.0.1/32` | Same specificity as DNS `/32` | Always rejected |
+| `10.2.0.5/32` | More specific than WireGuard `/24` | Always rejected |
 
 ## DNS Tunneling
 The CNI plugin can tunnel DNS traffic through the WireGuard tunnel.  This is enabled by setting the `gopher.cni/dns-tunneled` annotation to `true` (default).  The DNS server address is taken from the WireGuard configuration.

@@ -9,15 +9,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bartlettc22/gopher-cni/pkg/utils"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
+
 
 // ParseConfig parses a WireGuard INI-style configuration file and returns a Config
 func ParseConfig(data []byte) (*Config, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 
 	wgConfig := &wgtypes.Config{}
-	var address *net.IPNet
+	var addresses []*net.IPNet
 	var dns []net.IP
 	var currentPeer *wgtypes.PeerConfig
 	var section string
@@ -59,7 +61,7 @@ func ParseConfig(data []byte) (*Config, error) {
 
 		switch section {
 		case "interface":
-			if err := parseInterfaceKey(wgConfig, &address, &dns, key, value, lineNum); err != nil {
+			if err := parseInterfaceKey(wgConfig, &addresses, &dns, key, value, lineNum); err != nil {
 				return nil, err
 			}
 		case "peer":
@@ -84,13 +86,13 @@ func ParseConfig(data []byte) (*Config, error) {
 	}
 
 	return &Config{
-		WGConfig: wgConfig,
-		Address:  address,
-		DNS:      dns,
+		WGConfig:  wgConfig,
+		Addresses: addresses,
+		DNS:       dns,
 	}, nil
 }
 
-func parseInterfaceKey(config *wgtypes.Config, address **net.IPNet, dns *[]net.IP, key, value string, lineNum int) error {
+func parseInterfaceKey(config *wgtypes.Config, addresses *[]*net.IPNet, dns *[]net.IP, key, value string, lineNum int) error {
 	switch strings.ToLower(key) {
 	case "privatekey":
 		privateKey, err := wgtypes.ParseKey(value)
@@ -117,36 +119,24 @@ func parseInterfaceKey(config *wgtypes.Config, address **net.IPNet, dns *[]net.I
 		config.FirewallMark = &fwmark
 
 	case "address":
-		// TODO: support multiple interface addresses and IPv6
-		addrs := strings.Split(value, ",")
-		for _, addrStr := range addrs {
-			addrStr = strings.TrimSpace(addrStr)
-			if addrStr == "" {
-				continue
-			}
-			ip, ipnet, err := net.ParseCIDR(addrStr)
-			if err != nil {
-				return fmt.Errorf("line %d: invalid address %q: %w", lineNum, addrStr, err)
-			}
-			if ip.To4() != nil && *address == nil {
-				*address = ipnet
+		// TODO: support IPv6 addresses
+		parsed, err := utils.ParseIPOrCIDRList(value)
+		if err != nil {
+			return fmt.Errorf("line %d: invalid address: %w", lineNum, err)
+		}
+		for _, n := range parsed {
+			if n.IP.To4() != nil {
+				*addresses = append(*addresses, n)
 			}
 		}
 
 	case "dns":
-		// Split comma-separated DNS servers
-		dnsServers := strings.Split(value, ",")
-		for _, dnsStr := range dnsServers {
-			dnsStr = strings.TrimSpace(dnsStr)
-			if dnsStr == "" {
-				continue
-			}
-
-			ip := net.ParseIP(dnsStr)
-			if ip == nil {
-				return fmt.Errorf("line %d: invalid DNS server %q", lineNum, dnsStr)
-			}
-			*dns = append(*dns, ip)
+		parsed, err := utils.ParseIPOrCIDRList(value)
+		if err != nil {
+			return fmt.Errorf("line %d: invalid DNS server: %w", lineNum, err)
+		}
+		for _, n := range parsed {
+			*dns = append(*dns, n.IP)
 		}
 
 	default:
@@ -191,19 +181,12 @@ func parsePeerKey(peer *wgtypes.PeerConfig, key, value string, lineNum int) erro
 		peer.PersistentKeepaliveInterval = &duration
 
 	case "allowedips":
-		// Split comma-separated IPs
-		ips := strings.Split(value, ",")
-		for _, ipStr := range ips {
-			ipStr = strings.TrimSpace(ipStr)
-			if ipStr == "" {
-				continue
-			}
-
-			_, ipnet, err := net.ParseCIDR(ipStr)
-			if err != nil {
-				return fmt.Errorf("line %d: invalid allowed IP %q: %w", lineNum, ipStr, err)
-			}
-			peer.AllowedIPs = append(peer.AllowedIPs, *ipnet)
+		parsed, err := utils.ParseIPOrCIDRList(value)
+		if err != nil {
+			return fmt.Errorf("line %d: invalid allowed IP: %w", lineNum, err)
+		}
+		for _, n := range parsed {
+			peer.AllowedIPs = append(peer.AllowedIPs, *n)
 		}
 
 	default:
