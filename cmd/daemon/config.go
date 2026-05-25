@@ -3,7 +3,7 @@ package daemon
 import (
 	"fmt"
 
-	"github.com/bartlettc22/gopher-cni/pkg/utils"
+	"github.com/bartlettc22/gopher-cni/internal/utils"
 )
 
 // Config struct defines the CNI installation options

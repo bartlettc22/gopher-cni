@@ -7,9 +7,9 @@ import (
 	"net"
 	"slices"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
-	"github.com/bartlettc22/gopher-cni/pkg/kubernetes"
-	"github.com/bartlettc22/gopher-cni/pkg/utils"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
+	"github.com/bartlettc22/gopher-cni/internal/kubernetes"
+	"github.com/bartlettc22/gopher-cni/internal/utils"
 	"github.com/containernetworking/cni/pkg/skel"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 	v1 "k8s.io/api/core/v1"
@@ -31,7 +31,6 @@ type CNIProvider struct {
 	log               *slog.Logger
 }
 
-// func newKubeProviderFromCNI(conf *cni.PluginKubernetesConfig, args *skel.CmdArgs) (KubeCNIProvider, error) {
 func newKubeProviderFromCNI(conf *cni.PluginKubernetesConfig, args *skel.CmdArgs, client kubernetes.Client, log *slog.Logger) (*CNIProvider, error) {
 
 	var err error

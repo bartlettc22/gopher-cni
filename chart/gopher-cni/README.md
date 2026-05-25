@@ -1,6 +1,6 @@
 # Gopher CNI Helm Chart
 
-A Helm chart for deploying Gopher CNI to Kubernetes. Gopher CNI is a CNI plugin that tunnels pod traffic through WireGuard VPN with automatic network validation and optional NAT-PMP port forwarding support. This chart deploys the admission webhook component for automatic injection of validation and sidecar containers.
+A Helm chart for deploying Gopher CNI to Kubernetes. Gopher CNI is a CNI plugin that tunnels pod traffic through WireGuard VPN with automatic network validation. This chart deploys the admission webhook component for automatic injection of the validation init container.
 
 ## Prerequisites
 

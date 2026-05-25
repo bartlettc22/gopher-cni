@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bartlettc22/gopher-cni/pkg/net/mocks"
+	"github.com/bartlettc22/gopher-cni/internal/net/mocks"
 	"github.com/vishvananda/netlink"
 )
 

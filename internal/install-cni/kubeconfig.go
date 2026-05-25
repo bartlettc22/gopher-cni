@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bartlettc22/gopher-cni/pkg/utils"
+	"github.com/bartlettc22/gopher-cni/internal/utils"
 )
 
 const (

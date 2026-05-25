@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bartlettc22/gopher-cni/pkg/utils"
-	"github.com/bartlettc22/gopher-cni/pkg/version"
+	"github.com/bartlettc22/gopher-cni/internal/utils"
+	"github.com/bartlettc22/gopher-cni/internal/version"
 	"github.com/containernetworking/cni/libcni"
 )
 
@@ -31,21 +31,6 @@ func installCNIConfig(pluginConfigMap map[string]any, CNINetDir string) (string,
 		return "", err
 	}
 
-	// cniConfigFilepath, err := getCNIConfigFilepath(CNINetDir)
-	// if err != nil {
-	// 	return "", err
-	// }
-	// log.Info("CNI config file located", "path", cniConfigFilepath)
-
-	// if !utils.FileExists(cniConfigFilepath) {
-	// 	return "", fmt.Errorf("CNI config file %s was removed during configuration", cniConfigFilepath)
-	// }
-
-	// existinCNIConfig, err := os.ReadFile(cniConfigFilepath)
-	// if err != nil {
-	// 	return "", fmt.Errorf("error reading existing CNI config file: %v", err)
-	// }
-
 	newCNIConfigMap, err := insertCNIPluginConfig(pluginConfigMap, existingCNIConfig)
 	if err != nil {
 		return "", fmt.Errorf("error inserting CNI plugin config into existing CNI config: %v", err)
@@ -54,9 +39,6 @@ func installCNIConfig(pluginConfigMap map[string]any, CNINetDir string) (string,
 	if err = writeCNIConfigMap(cniConfigFilepath, newCNIConfigMap); err != nil {
 		return "", err
 	}
-	// if err = os.WriteFile(cniConfigFilepath, newCNIConfigBytes, os.FileMode(0o644)); err != nil {
-	// 	return cniConfigFilepath, fmt.Errorf("failed to write CNI config file %v: %w", cniConfigFilepath, err)
-	// }
 
 	return cniConfigFilepath, nil
 }
@@ -171,50 +153,13 @@ func getDefaultCNINetwork(confDir string) (string, error) {
 // Requires the existing CNI config to be in the format of a CNI configlist file
 func insertCNIPluginConfig(pluginConfigMap, existingCNIConfig map[string]any) (map[string]any, error) {
 
-	// var existingMap map[string]any
-	// err := json.Unmarshal(existingCNIConfig, &existingMap)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error unmarshaling existing CNI config: %v", err)
-	// }
-
-	// newMap := existingMap
-	// plugins, ok := newMap["plugins"].([]any)
-	// if !ok {
-	// 	return nil, fmt.Errorf("error reading plugin list from CNI config")
-	// }
-
-	// // Search for and remove our plugin from the existing CNI config (if it exists)
-	// for i, rawPlugin := range plugins {
-	// 	plugin, ok := rawPlugin.(map[string]any)
-	// 	if !ok {
-	// 		return nil, fmt.Errorf("error reading plugin from CNI config plugin list")
-	// 	}
-	// 	if plugin["type"] == version.CNI_PLUGIN_TYPE {
-	// 		plugins = append(plugins[:i], plugins[i+1:]...)
-	// 		break
-	// 	}
-	// }
 	newMap, err := removeCNIPluginConfig(existingCNIConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	// var pluginMap map[string]any
-	// err = json.Unmarshal(cniPluginConfig, &pluginMap)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error unmarshaling CNI plugin config: %v", err)
-	// }
-
-	// Finally, add our plugin to the bottom of the existing CNI config plugin list
 	plugins := newMap["plugins"].([]any)
 	newMap["plugins"] = append(plugins, pluginConfigMap)
-
-	// Format the new CNI config
-	// cniConfig, err := json.MarshalIndent(newMap, "", "  ")
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// cniConfig = append(cniConfig, "\n"...)
 
 	return newMap, nil
 }
@@ -227,7 +172,6 @@ func removeCNIPluginConfig(cniConfigMap map[string]any) (map[string]any, error) 
 		return nil, fmt.Errorf("error reading plugin list from CNI config")
 	}
 
-	// Search for and remove our plugin from the existing CNI config (if it exists)
 	for i, rawPlugin := range plugins {
 		plugin, ok := rawPlugin.(map[string]any)
 		if !ok {

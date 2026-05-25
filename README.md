@@ -1,22 +1,21 @@
 # Gopher CNI
 
-A Kubernetes CNI plugin that tunnels pod traffic through WireGuard VPN with automatic network validation.
+A Kubernetes CNI plugin that tunnels pod traffic through WireGuard VPN.
 
 ## Features
 
-- **WireGuard VPN Tunneling** - Routes all pod traffic through WireGuard tunnels using CNI
-- **Container Network Interface** - CNI plugin for seamless Kubernetes pod networking integration
-- **Automatic Network Validation** - Validates WireGuard tunnel and network setup before pod starts
-- **Admission Webhook** - Automatic injection of validation containers via webhook
-- **Multi-Mode Operation** - Supports daemon and init-validation modes
-- **Label-Based Control** - Simple opt-in via pod labels
-- **Production Ready** - High availability, graceful shutdown, health checks, cert-manager integration
+- **WireGuard VPN Tunneling** - Routes pod traffic through WireGuard tunnels at the CNI layer, transparent to the application
+- **Two CNI Modes** - `pod-origin` (traffic exits via `eth0` as encrypted UDP) or `host-origin` (traffic bypasses the Kubernetes overlay entirely)
+- **Split Tunneling** - Route specific CIDRs via the pod's original interface while everything else goes through WireGuard
+- **DNS Tunneling** - Automatically configures pods to use DNS servers from the WireGuard config
+- **Admission Webhooks** - Mutating webhook injects required containers; validating webhook catches misconfigured pods at admission time
+- **Label-Based Opt-In** - Pods must explicitly opt in via a label; no cluster-wide interception
 
 ## Quick Start
 
 ### Prerequisites
-- Kubernetes cluster (1.19+)
-- kubectl configured
+
+- Kubernetes 1.19+
 - Helm 3.0+
 - [cert-manager](https://cert-manager.io/) installed
 
@@ -34,14 +33,21 @@ helm install cert-manager jetstack/cert-manager \
 ### Deploy Gopher CNI
 
 ```bash
-helm install gopher-cni ./chart/gopher-cni \
+helm install gopher-cni oci://ghcr.io/bartlettc22/charts/gopher-cni \
   --namespace gopher-cni-system \
   --create-namespace
 ```
 
-### Enable WireGuard Tunneling for Pods
+### Enable WireGuard Tunneling for a Pod
 
-Add the label to your pods to enable automatic validation:
+Create a secret containing the WireGuard configuration:
+
+```bash
+kubectl create secret generic my-wg-config \
+  --from-file=wg.conf=/path/to/wg0.conf
+```
+
+Then add the label and annotation to your pod:
 
 ```yaml
 apiVersion: v1
@@ -49,99 +55,96 @@ kind: Pod
 metadata:
   name: my-app
   labels:
-    gopher.cni/enabled: "true"             # Enable WireGuard tunnel validation
+    gopher.cni/enabled: "true"
+  annotations:
+    gopher.cni/wgconf-secret: "my-wg-config"
 spec:
   containers:
   - name: app
     image: myapp:latest
 ```
 
-> **⚠️ Warning**: Gopher CNI is not compatible with pods using `hostNetwork: true`. The admission webhook will reject pods that attempt to use both gopher-cni injection and host networking.
+> **Note**: `hostNetwork: true` is not compatible with Gopher CNI. The validating webhook will reject such pods.
 
-## Components
+## How It Works
 
-### CNI Plugin
-The core component that provides WireGuard VPN tunneling:
-- **Network Integration** - Integrates with existing Kubernetes CNI to add WireGuard capabilities
-- **Traffic Routing** - Routes pod traffic through WireGuard VPN tunnels
-- **Configuration Management** - Manages WireGuard configuration on host nodes
+When a pod with `gopher.cni/enabled: "true"` is scheduled:
 
-### Admission Webhook
-Provides automatic injection capabilities:
-- **Mutating Webhook** - Automatically injects validation init containers
-- **Validating Webhook** - Validates pod configuration and label compatibility
-- **TLS Certificates** - Managed by cert-manager with automatic renewal
-- **Health Checks** - `/health` and `/ready` endpoints
-
-### Injected Resources
-
-**Init Container** - Validates WireGuard tunnel and CNI configuration:
-```yaml
-name: gopher-cni-validator
-image: gopher-cni:latest
-command:
-- /validator
-```
+1. The **mutating webhook** injects a `gopher-cni-validator` init container.
+2. The **CNI plugin** runs at pod startup, reads the WireGuard config from the referenced secret, creates a WireGuard interface inside the pod's network namespace, and installs the appropriate routes.
+3. The **validating webhook** rejects pods with invalid annotation values or split-tunnel CIDRs that would break WireGuard connectivity.
 
 ## Configuration
 
-### Command-Line Flags
+All pod-level configuration is done via labels and annotations. See the [Configuration Reference](docs/CONFIGURATION.md) for the full list.
 
-```bash
-# Operation mode
---mode=daemon                         # daemon or init-validation (default: daemon)
+### Key Annotations
 
-# Daemon mode settings
---port=8443                           # Webhook server port (daemon mode)
---webhook-tls-disable                 # Disable TLS for webhook server (testing only, daemon mode)
---tls-cert=/etc/webhook/certs/tls.crt # TLS certificate path (daemon mode, required if TLS enabled)
---tls-key=/etc/webhook/certs/tls.key  # TLS private key path (daemon mode, required if TLS enabled)
---image=gopher-cni:latest             # Container image for injected containers (daemon mode)
+| Annotation | Description | Default |
+|---|---|---|
+| `gopher.cni/wgconf-secret` | Name of the Kubernetes secret containing `wg.conf` | *(required)* |
+| `gopher.cni/cni-mode` | `pod-origin` or `host-origin` | `pod-origin` |
+| `gopher.cni/dns-tunneled` | Tunnel DNS via WireGuard using DNS servers from the config | `true` |
+| `gopher.cni/split-tunnel-cidrs` | Comma-separated CIDRs to route via the original interface | `""` |
+| `gopher.cni/split-tunnel-overlap` | Set to `allow` to permit split-tunnel CIDRs that overlap (but are less specific than) WireGuard addresses or DNS servers | `""` |
 
-# CNI settings (daemon and init-validation modes)
---cni-bin-path=/opt/cni/bin           # Host path for CNI binaries
---cni-config-path=/etc/cni/net.d      # Host path for CNI configuration
+### WireGuard Secret Format
+
+The secret must contain a key named `wg.conf` with a standard WireGuard INI configuration:
+
+```ini
+[Interface]
+PrivateKey = <private key>
+Address = 10.2.0.2/32
+DNS = 10.2.0.1
+
+[Peer]
+PublicKey = <public key>
+AllowedIPs = 0.0.0.0/0
+Endpoint = vpn.example.com:51820
 ```
 
-### Environment Variables
+### Split Tunneling
 
-All flags can also be set via environment variables:
-- `GOPHER_CNI_MODE`
-- `WEBHOOK_PORT`
-- `WEBHOOK_TLS_DISABLE`
-- `WEBHOOK_IMAGE`
-- `CNI_BIN_PATH`
-- `CNI_CONFIG_PATH`
-- `TLS_CERT_PATH`
-- `TLS_KEY_PATH`
+Split tunneling lets specific CIDRs bypass the WireGuard tunnel:
+
+```yaml
+annotations:
+  gopher.cni/wgconf-secret: "my-wg-config"
+  gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
+```
+
+The CNI plugin automatically installs protected routes via the WireGuard interface for all WireGuard addresses and DNS servers, so split-tunnel CIDRs cannot accidentally capture that traffic. The validating webhook enforces this: split-tunnel CIDRs that are the same or more specific than a protected route are always rejected; less-specific overlaps are rejected by default but can be explicitly permitted with `gopher.cni/split-tunnel-overlap: "allow"`.
+
+### Daemon Flags
+
+```bash
+--port=8443                             # Webhook server port
+--tls-cert=/etc/webhook/certs/tls.crt  # TLS certificate path
+--tls-key=/etc/webhook/certs/tls.key   # TLS private key path
+--image=gopher-cni:latest               # Image for injected containers
+--cni-bin-path=/opt/cni/bin            # Host path for CNI binaries
+--cni-config-path=/etc/cni/net.d       # Host path for CNI configuration
+```
+
+All flags can also be set via environment variables (`WEBHOOK_PORT`, `WEBHOOK_IMAGE`, `TLS_CERT_PATH`, `TLS_KEY_PATH`, `CNI_BIN_PATH`, `CNI_CONFIG_PATH`).
 
 ## Troubleshooting
 
-### Check Status
+Common issues:
 
-```bash
-# Check Helm release
-helm status gopher-cni -n gopher-cni-system
-
-# Check certificates (if using webhook)
-kubectl get certificate -n gopher-cni-system
-kubectl describe certificate -n gopher-cni-system
-```
-
-### Common Issues
-
-1. **WireGuard tunnel not working**: Verify CNI plugin is installed on nodes and WireGuard configuration is correct
-2. **Pods not receiving validation containers**: Verify label `gopher.cni/enabled: "true"` is set
-3. **Certificate not ready**: Check cert-manager logs and certificate status
-4. **Webhook timeout**: Verify webhook pods are running and healthy
-5. **Helm installation fails**: Ensure cert-manager is installed and ready
+- **Pod rejected at admission** — check the rejection message; it will identify the specific annotation that failed validation
+- **WireGuard tunnel not established** — verify the secret exists in the pod's namespace and the `wg.conf` is valid
+- **DNS not resolving** — confirm the WireGuard config includes a `DNS =` line, or set `gopher.cni/dns-tunneled: "false"`
+- **Certificate not ready** — check cert-manager logs and `kubectl describe certificate -n gopher-cni-system`
 
 ## Documentation
 
-- [Helm Chart Documentation](chart/gopher-cni/README.md) - Helm chart installation and configuration
-- [Configuration Reference](docs/CONFIGURATION.md) - Detailed configuration options
-- [Developer Guide](docs/DEV.md) - Building, testing, and running locally
+- [Configuration Reference](docs/CONFIGURATION.md) — all labels, annotations, and WireGuard secret format
+- [Helm Chart](chart/gopher-cni/README.md) — Helm values and installation options
+- [Developer Guide](docs/DEV.md) — building, testing, and running locally
+- [Changelog](CHANGELOG.md)
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT License — see [LICENSE](LICENSE) for details.

@@ -7,7 +7,7 @@ import (
 	"github.com/bartlettc22/gopher-cni/cmd/daemon"
 	initvalidation "github.com/bartlettc22/gopher-cni/cmd/init-validation"
 	"github.com/bartlettc22/gopher-cni/cmd/sidecar"
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
 )
 
 func main() {

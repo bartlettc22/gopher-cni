@@ -3,7 +3,7 @@ package install
 import (
 	"testing"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

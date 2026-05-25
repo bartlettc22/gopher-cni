@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
-	"github.com/bartlettc22/gopher-cni/pkg/udslog"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
+	"github.com/bartlettc22/gopher-cni/internal/udslog"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/google/uuid"
 )

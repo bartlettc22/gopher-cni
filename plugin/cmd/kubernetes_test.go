@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

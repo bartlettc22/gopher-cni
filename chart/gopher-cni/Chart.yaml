@@ -12,7 +12,6 @@ keywords:
   - networking
   - container-networking
   - kubernetes
-  - nat-pmp
   - port-forwarding
   - admission-webhook
 home: https://github.com/bartlettc22/gopher-cni
