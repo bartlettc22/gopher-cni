@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
 )
 
 const (

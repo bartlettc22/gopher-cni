@@ -1,8 +1,8 @@
 package webhook
 
 import (
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
-	"github.com/bartlettc22/gopher-cni/pkg/kubernetes"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
+	"github.com/bartlettc22/gopher-cni/internal/kubernetes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

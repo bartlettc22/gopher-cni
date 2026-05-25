@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bartlettc22/gopher-cni/pkg/install-cni"
-	"github.com/bartlettc22/gopher-cni/pkg/kubernetes"
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
-	"github.com/bartlettc22/gopher-cni/pkg/udslog"
-	"github.com/bartlettc22/gopher-cni/pkg/webhook"
+	"github.com/bartlettc22/gopher-cni/internal/install-cni"
+	"github.com/bartlettc22/gopher-cni/internal/kubernetes"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
+	"github.com/bartlettc22/gopher-cni/internal/udslog"
+	"github.com/bartlettc22/gopher-cni/internal/webhook"
 	"golang.org/x/sync/errgroup"
 )
 

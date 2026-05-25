@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
-	"github.com/bartlettc22/gopher-cni/pkg/utils"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
+	"github.com/bartlettc22/gopher-cni/internal/utils"
 )
 
 // Config holds global configuration for the application

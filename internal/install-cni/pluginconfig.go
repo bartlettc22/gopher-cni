@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
-	"github.com/bartlettc22/gopher-cni/pkg/version"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
+	"github.com/bartlettc22/gopher-cni/internal/version"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 )
 

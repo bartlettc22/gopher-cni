@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"net"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
-	pkgnet "github.com/bartlettc22/gopher-cni/pkg/net"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
+	pkgnet "github.com/bartlettc22/gopher-cni/internal/net"
 	"github.com/vishvananda/netlink"
 )
 

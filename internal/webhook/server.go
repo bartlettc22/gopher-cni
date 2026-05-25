@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
 )
 
 // Server represents the webhook server

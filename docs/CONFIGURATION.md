@@ -31,7 +31,6 @@ metadata:
     gopher.cni/wgconf-secret: "my-wireguard-config"
     gopher.cni/cni-mode: "host-origin"
     gopher.cni/dns-tunneled: "true"
-    gopher.cni/nat-pmp: "true"
     gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
     gopher.cni/split-tunnel-overlap: "allow"
 spec:

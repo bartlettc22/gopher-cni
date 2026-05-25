@@ -4,22 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
 	cniv1 "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/cni/pkg/version"
 )
-
-// NetConf is the plugin specific CNI network configuration
-// type NetConf struct {
-// 	cniTypes.NetConf
-// LogLevel      string       `json:"log_level"`
-// LogUDSAddress string       `json:"log_uds_address"`
-// Kubernetes    *KubeNetConf `json:"kubernetes"`
-// }
-
-// type KubeNetConf struct {
-// 	Kubeconfig string `json:"kubeconfig"`
-// }
 
 // LoadNetConf unmarshals a network configuration from JSON and returns
 // a NetConf together with the CNI version

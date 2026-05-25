@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
-	"github.com/bartlettc22/gopher-cni/pkg/utils"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
+	"github.com/bartlettc22/gopher-cni/internal/utils"
 )
 
 var (

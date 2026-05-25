@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bartlettc22/gopher-cni/pkg/logging"
+	"github.com/bartlettc22/gopher-cni/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bartlettc22/gopher-cni/pkg/cni"
+	"github.com/bartlettc22/gopher-cni/internal/cni"
 	"github.com/containernetworking/cni/pkg/skel"
 	cnitypes "github.com/containernetworking/cni/pkg/types"
 	cniv1 "github.com/containernetworking/cni/pkg/types/100"
