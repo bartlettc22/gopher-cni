@@ -12,14 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// unmarshalPatches unmarshals a JSON patch list from raw bytes.
-func unmarshalPatches(t *testing.T, raw []byte) []PatchOperation {
-	t.Helper()
-	var patches []PatchOperation
-	require.NoError(t, json.Unmarshal(raw, &patches), "failed to unmarshal patches")
-	return patches
-}
-
 // findPatch returns the first patch whose Path matches, or nil.
 func findPatch(patches []PatchOperation, path string) *PatchOperation {
 	for i := range patches {
@@ -308,7 +300,7 @@ func TestCreateDNSPatches_SplitDNS(t *testing.T) {
 		volumes := unmarshalPatchValue[[]corev1.Volume](t, volumePatch.Value)
 		require.Len(t, volumes, 1)
 		assert.Equal(t, CoreDNSVolumeName, volumes[0].Name)
-		assert.NotNil(t, volumes[0].VolumeSource.EmptyDir)
+		assert.NotNil(t, volumes[0].EmptyDir)
 
 		initPatch := findPatch(patches, "/spec/initContainers/-")
 		require.NotNil(t, initPatch, "expected initContainers patch")
