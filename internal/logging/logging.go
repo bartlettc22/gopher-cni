@@ -2,8 +2,40 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
 )
+
+// Configure sets the default slog logger with the given level and format.
+func Configure(level, format string) error {
+	var lvl slog.Level
+	switch level {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "info":
+		lvl = slog.LevelInfo
+	case "warn":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		return fmt.Errorf("unknown log level: %s (valid: debug, info, warn, error)", level)
+	}
+
+	var handler slog.Handler
+	switch format {
+	case "json":
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})
+	case "text":
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})
+	default:
+		return fmt.Errorf("unknown log format: %s (valid: text, json)", format)
+	}
+
+	slog.SetDefault(slog.New(handler))
+	return nil
+}
 
 type Logger struct {
 	log *slog.Logger

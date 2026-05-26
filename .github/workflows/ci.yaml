@@ -101,11 +101,12 @@ jobs:
         run: task go:test-integration
 
   build:
-    name: Build (${{ matrix.arch }})
+    name: Build (${{ matrix.target }}/${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [amd64, arm64]
+        target: [installer, webhook, sidecar]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -116,7 +117,7 @@ jobs:
           version: 3.x
 
       - name: Build Docker image
-        run: task docker:build ARCH=${{ matrix.arch }} INSTALL_QEMU_WITHOUT_PROMPT=true VERSION=${{ github.head_ref || github.ref_name }}
+        run: task docker:build TARGET=${{ matrix.target }} ARCH=${{ matrix.arch }} INSTALL_QEMU_WITHOUT_PROMPT=true VERSION=${{ github.head_ref || github.ref_name }}
 
   publish:
     name: Publish

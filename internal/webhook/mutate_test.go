@@ -622,7 +622,11 @@ func TestMutateHandler_InitContainerConfiguration(t *testing.T) {
 		t.Errorf("expected init container image to be 'custom-image:v1.2.3', got %s", initContainer.Image)
 	}
 
-	if len(initContainer.Command) != 1 || initContainer.Command[0] != "/gopher" {
-		t.Errorf("expected init container command to be ['/gopher'], got %v", initContainer.Command)
+	if len(initContainer.Command) != 0 {
+		t.Errorf("expected init container command to be empty (uses image ENTRYPOINT), got %v", initContainer.Command)
+	}
+
+	if len(initContainer.Args) != 1 || initContainer.Args[0] != "init-validation" {
+		t.Errorf("expected init container args to be ['init-validation'], got %v", initContainer.Args)
 	}
 }

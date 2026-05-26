@@ -1,5 +1,5 @@
-{{- if .Values.certificate.enabled }}
-{{- if .Values.certificate.issuer.create }}
+{{- if .Values.webhook.certificate.enabled }}
+{{- if .Values.webhook.certificate.issuer.create }}
 ---
 # Self-signed Issuer
 apiVersion: cert-manager.io/v1
@@ -32,7 +32,7 @@ spec:
 ---
 # CA Issuer
 apiVersion: cert-manager.io/v1
-kind: {{ .Values.certificate.issuer.kind | default "Issuer" }}
+kind: {{ .Values.webhook.certificate.issuer.kind | default "Issuer" }}
 metadata:
   name: {{ include "gopher-cni.caIssuerName" . }}
   labels:
@@ -51,8 +51,8 @@ metadata:
     {{- include "gopher-cni.labels" . | nindent 4 }}
 spec:
   secretName: {{ include "gopher-cni.certificateSecretName" . }}
-  duration: {{ .Values.certificate.duration }}
-  renewBefore: {{ .Values.certificate.renewBefore }}
+  duration: {{ .Values.webhook.certificate.duration }}
+  renewBefore: {{ .Values.webhook.certificate.renewBefore }}
   subject:
     organizations:
     - gopher-cni

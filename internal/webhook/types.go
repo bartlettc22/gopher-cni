@@ -15,6 +15,9 @@ const (
 	// InitContainerName is the name of the injected validator init container
 	InitContainerName = "gopher-cni-validator"
 
+	// SidecarContainerName is the name of the injected sidecar container
+	SidecarContainerName = "gopher-cni-sidecar"
+
 	// CoreDNSConfigContainerName is the name of the init container that writes the CoreDNS Corefile
 	CoreDNSConfigContainerName = "gopher-cni-coredns-config"
 
@@ -23,16 +26,13 @@ const (
 
 	// CoreDNSVolumeName is the emptyDir volume shared between the CoreDNS config init container and sidecar
 	CoreDNSVolumeName = "gopher-cni-coredns"
-
-	// DefaultCoreDNSImage is the default CoreDNS container image
-	DefaultCoreDNSImage = "docker.io/coredns/coredns:1.13.1"
 )
 
 // PatchOperation represents a JSON patch operation
 type PatchOperation struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value,omitempty"`
 }
 
 // WebhookConfig holds the webhook configuration
@@ -60,7 +60,7 @@ type WebhookConfig struct {
 func DefaultWebhookConfig() *WebhookConfig {
 	return &WebhookConfig{
 		Image:        "gopher-cni:latest",
-		CoreDNSImage: DefaultCoreDNSImage,
+		CoreDNSImage: "",
 		TLSCertPath:  "/etc/webhook/certs/tls.crt",
 		TLSKeyPath:   "/etc/webhook/certs/tls.key",
 		Port:         8443,
@@ -70,12 +70,9 @@ func DefaultWebhookConfig() *WebhookConfig {
 // createInitContainer creates the CNI validator init container
 func (c *WebhookConfig) createInitContainer() corev1.Container {
 	return corev1.Container{
-		Name:    InitContainerName,
-		Image:   c.Image,
-		Command: []string{"/gopher"},
-		Args: []string{
-			"init-validation",
-		},
+		Name:  InitContainerName,
+		Image: c.Image,
+		Args:  []string{"init-validation"},
 	}
 }
 
@@ -84,10 +81,9 @@ func (c *WebhookConfig) createInitContainer() corev1.Container {
 // the COREFILE environment variable so it can be generated per-pod at admission time.
 func (c *WebhookConfig) createCoreDNSConfigInitContainer(corefile string) corev1.Container {
 	return corev1.Container{
-		Name:    CoreDNSConfigContainerName,
-		Image:   c.Image,
-		Command: []string{"/gopher"},
-		Args:    []string{"write-coredns-config"},
+		Name:  CoreDNSConfigContainerName,
+		Image: c.Image,
+		Args:  []string{"write-coredns-config"},
 		Env: []corev1.EnvVar{{
 			Name:  "COREFILE",
 			Value: corefile,

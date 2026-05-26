@@ -1,11 +1,4 @@
 # Default values for gopher-cni
-# This is a YAML-formatted file.
-
-image:
-  repository: ghcr.io/bartlettc22/gopher-cni
-  pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion
-  tag: ""
 
 imagePullSecrets: []
 nameOverride: ""
@@ -14,106 +7,140 @@ fullnameOverride: ""
 logLevel: info
 logFormat: json
 
-cni:
-  host:
-    cniNetDir: /etc/cni/net.d
-    binPath: /opt/cni/bin
-    udsSocketDir: /var/run/gopher-cni
-  containerHostPathPrefix: /host
-
-# Webhook server configuration
-webhook:
-  port: 8443
-  # Container image for injected init/sidecar containers
-  # Defaults to daemonset image
-  injectedImage: ""
-
-  # TLS certificate paths (mounted from secret)
-  tls:
-    certPath: "/etc/webhook/certs/tls.crt"
-    keyPath: "/etc/webhook/certs/tls.key"
-  # Webhook failure policy (Fail or Ignore)
-  failurePolicy: Fail
-  # Webhook timeout in seconds
-  timeoutSeconds: 10
-
-# cert-manager certificate configuration
-certificate:
-  enabled: true
-  # Certificate duration (90 days)
-  duration: 2160h
-  # Renew certificate before expiry (15 days)
-  renewBefore: 360h
-  # Issuer configuration
-  issuer:
-    # Create self-signed issuer and CA
-    create: true
-    # Issuer name (if using existing issuer, set create: false)
-    name: ""
-    # Issuer kind (Issuer or ClusterIssuer)
-    kind: Issuer
-
-# Service account
+# Service account shared by both the installer DaemonSet and webhook Deployment
 serviceAccount:
   # Annotations to add to the service account
   annotations: {}
   # The name of the service account to use
   name: ""
 
-# Pod annotations
-podAnnotations: {}
+# Installer DaemonSet — runs on every node as root to install the CNI plugin
+installer:
+  image:
+    repository: ghcr.io/bartlettc22/gopher-cni-installer
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion
+    tag: ""
 
-# Pod labels
-podLabels: {}
+  # Application config — maps directly to installer environment variables
+  config:
+    # Directory in the container where the host root is mounted
+    mountedHostDir: /host
+    # Host path for CNI network config files
+    cniNetDir: /etc/cni/net.d
+    # Host path for CNI plugin binaries
+    cniBinTargetDir: /opt/cni/bin
+    # Host path for the UDS log socket directory
+    udsSocketDir: /var/run/gopher-cni
 
-# Pod security context
-# Note: DaemonSet needs to run with elevated privileges to install CNI plugin
-podSecurityContext: {}
+  podAnnotations: {}
+  podLabels: {}
 
-# Container security context
-# Note: Requires privileges to write to host CNI directories
-securityContext: {}
+  # Pod security context
+  podSecurityContext: {}
 
-# Service configuration
-service:
-  type: ClusterIP
-  port: 443
-  targetPort: 8443
+  # Container security context — must run as root to write to host CNI directories
+  securityContext: {}
 
-# Resource limits and requests
-resources:
-  limits:
-    cpu: 500m
-    memory: 256Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
+  resources: {}
 
-# Liveness probe configuration
-livenessProbe:
-  httpGet:
-    path: /health
+  # Node selector — by default run on all nodes
+  nodeSelector: {}
+
+  # Tolerations — by default, run on all nodes including control plane
+  tolerations:
+  - operator: Exists
+    effect: NoSchedule
+
+  affinity: {}
+
+# Sidecar image — injected into user pods for init-validation, write-coredns-config,
+# and future subcommands (e.g. nat-pmp). Referenced by webhook.config.injectedImage.
+sidecar:
+  image:
+    repository: ghcr.io/bartlettc22/gopher-cni-sidecar
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion
+    tag: ""
+
+# Webhook Deployment — serves the mutating/validating admission webhook
+webhook:
+  image:
+    repository: ghcr.io/bartlettc22/gopher-cni-webhook
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion
+    tag: ""
+
+  replicaCount: 1
+
+  # Application config — maps directly to webhook environment variables and k8s webhook settings
+  config:
     port: 8443
-    scheme: HTTPS
-  initialDelaySeconds: 15
-  periodSeconds: 20
 
-# Readiness probe configuration
-readinessProbe:
-  httpGet:
-    path: /ready
-    port: 8443
-    scheme: HTTPS
-  initialDelaySeconds: 5
-  periodSeconds: 10
+    # CoreDNS sidecar image for split-DNS pods
+    coreDNSImage: "docker.io/coredns/coredns:1.13.1"
 
-# Node selector
-nodeSelector: {}
+    # TLS certificate paths (mounted from cert-manager secret)
+    tls:
+      certPath: "/etc/webhook/certs/tls.crt"
+      keyPath: "/etc/webhook/certs/tls.key"
 
-# Tolerations - by default, run on all nodes including control plane
-tolerations:
-- operator: Exists
-  effect: NoSchedule
+    # Webhook failure policy (Fail or Ignore)
+    failurePolicy: Fail
 
-# Affinity rules
-affinity: {}
+    # Webhook timeout in seconds
+    timeoutSeconds: 10
+
+  podAnnotations: {}
+  podLabels: {}
+
+  # Pod security context
+  podSecurityContext: {}
+
+  # Container security context — webhook does not require host access
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    allowPrivilegeEscalation: false
+
+  resources: {}
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8443
+      scheme: HTTPS
+    initialDelaySeconds: 15
+    periodSeconds: 20
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8443
+      scheme: HTTPS
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  affinity: {}
+
+  # cert-manager certificate configuration
+  certificate:
+    enabled: true
+    # Certificate duration (90 days)
+    duration: 2160h
+    # Renew certificate before expiry (15 days)
+    renewBefore: 360h
+    # Issuer configuration
+    issuer:
+      # Create self-signed issuer and CA
+      create: true
+      # Issuer name (if using existing issuer, set create: false)
+      name: ""
+      # Issuer kind (Issuer or ClusterIssuer)
+      kind: Issuer
+
+  # Service configuration (fronts the webhook Deployment)
+  service:
+    type: ClusterIP
+    port: 443
+    targetPort: 8443

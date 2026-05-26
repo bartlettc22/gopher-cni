@@ -42,7 +42,7 @@ func (h *ValidateHandler) validate(ar *admissionv1.AdmissionReview) *admissionv1
 		return early
 	}
 
-	validationErrors := h.validatePodSpec(pod.Namespace, &pod.Spec, pod.Labels, pod.Annotations)
+	validationErrors := h.validatePodSpec(pod.Namespace, &pod.Spec, pod.Annotations)
 	if len(validationErrors) == 0 {
 		return &admissionv1.AdmissionResponse{Allowed: true}
 	}
@@ -72,7 +72,7 @@ func (h *ValidateHandler) validate(ar *admissionv1.AdmissionReview) *admissionv1
 }
 
 // validatePodSpec validates the pod specification
-func (h *ValidateHandler) validatePodSpec(namespace string, podSpec *corev1.PodSpec, labels map[string]string, annotations map[string]string) []ValidationError {
+func (h *ValidateHandler) validatePodSpec(namespace string, podSpec *corev1.PodSpec, annotations map[string]string) []ValidationError {
 	var errors []ValidationError
 
 	validateLogger.Debug("validating pod spec")

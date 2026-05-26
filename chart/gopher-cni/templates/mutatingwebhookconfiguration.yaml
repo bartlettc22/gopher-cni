@@ -16,9 +16,9 @@ webhooks:
       name: {{ include "gopher-cni.webhookServiceName" . }}
       namespace: {{ .Release.Namespace }}
       path: /mutate
-      port: {{ .Values.service.port }}
+      port: {{ .Values.webhook.service.port }}
     # CA bundle will be injected by cert-manager
-  failurePolicy: {{ .Values.webhook.failurePolicy }}
+  failurePolicy: {{ .Values.webhook.config.failurePolicy }}
   matchPolicy: Equivalent
   namespaceSelector:
     matchExpressions:
@@ -45,4 +45,4 @@ webhooks:
     - pods
     scope: Namespaced
   sideEffects: None
-  timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+  timeoutSeconds: {{ .Values.webhook.config.timeoutSeconds }}

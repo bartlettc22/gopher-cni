@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0]
+
+### Breaking Changes
+- `values.yaml` fully restructured — installer settings under `installer.*`, webhook settings under `webhook.*`; `certificate.*` and `service.*` moved under `webhook.*`; three separate images now required: `installer.image`, `webhook.image`, `sidecar.image`
+
+### Added
+- Webhook now runs as a `Deployment` (non-root, `runAsUser: 65534`) instead of on the DaemonSet, enabling independent scaling and privilege separation
+- New `gopher-cni-sidecar` image consolidates all injected pod containers (`init-validation`, `write-coredns-config`, and future subcommands); sourced from `sidecar.image` in values
+- `ClusterRole`: added `services` to the `get`/`list` rules
+- CoreDNS image version pinned to `docker.io/coredns/coredns:1.13.1` in `webhook.config.coreDNSImage`
+- All three images (`installer`, `webhook`, `sidecar`) now use `scratch` as the base — static binaries with no OS layer
+
 ## [0.8.0]
 
 ### Added
