@@ -2,6 +2,8 @@
 
 A Kubernetes CNI plugin that tunnels pod traffic through WireGuard VPN.
 
+![High-level architecture](docs/high-level.png)
+
 ## Features
 
 - **WireGuard VPN Tunneling** - Routes pod traffic through WireGuard tunnels at the CNI layer, transparent to the application
@@ -10,6 +12,7 @@ A Kubernetes CNI plugin that tunnels pod traffic through WireGuard VPN.
 - **DNS Tunneling** - Automatically configures pods to use DNS servers from the WireGuard config
 - **Admission Webhooks** - Mutating webhook injects required containers; validating webhook catches misconfigured pods at admission time
 - **Label-Based Opt-In** - Pods must explicitly opt in via a label; no cluster-wide interception
+- **Multi-Architecture** - Images published for `linux/amd64` and `linux/arm64`
 
 ## Quick Start
 
@@ -17,24 +20,13 @@ A Kubernetes CNI plugin that tunnels pod traffic through WireGuard VPN.
 
 - Kubernetes 1.19+
 - Helm 3.0+
-- [cert-manager](https://cert-manager.io/) installed
-
-### Install cert-manager
-
-```bash
-helm repo add jetstack https://charts.jetstack.io
-helm repo update
-helm install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
-  --create-namespace \
-  --set installCRDs=true
-```
+- [cert-manager](https://cert-manager.io/docs/installation/) installed
 
 ### Deploy Gopher CNI
 
 ```bash
 helm install gopher-cni oci://ghcr.io/bartlettc22/charts/gopher-cni \
-  --namespace gopher-cni-system \
+  --namespace gopher-cni \
   --create-namespace
 ```
 

@@ -18,6 +18,8 @@ import (
 // webhookMockClient implements kubernetes.Client for webhook tests
 type webhookMockClient struct {
 	secrets map[string]*corev1.Secret
+	svcIP   string
+	svcErr  error
 }
 
 func (m *webhookMockClient) GetPod(_ context.Context, namespace, name string) (*corev1.Pod, error) {
@@ -37,12 +39,44 @@ func (m *webhookMockClient) FetchSecretKey(_ context.Context, namespace, name, k
 	return val, nil
 }
 
+func (m *webhookMockClient) GetServiceClusterIP(_ context.Context, namespace, name string) (string, error) {
+	if m.svcErr != nil {
+		return "", m.svcErr
+	}
+	if m.svcIP != "" {
+		return m.svcIP, nil
+	}
+	return "10.96.0.10", nil
+}
+
 func newWebhookMockClient(namespace, name string, data map[string][]byte) *webhookMockClient {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		Data:       data,
 	}
 	return &webhookMockClient{secrets: map[string]*corev1.Secret{namespace + "/" + name: secret}}
+}
+
+// minimalWGConf is a WireGuard config with no DNS server, used in tests that only care
+// about init container injection and should produce no DNS patches.
+var minimalWGConf = []byte(`[Interface]
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+Address = 10.2.0.2/32
+
+[Peer]
+PublicKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+AllowedIPs = 0.0.0.0/0
+Endpoint = 1.2.3.4:51820
+`)
+
+// defaultTestConfig returns a WebhookConfig with a mock KubeClient pre-seeded with
+// a minimal WireGuard secret (no DNS) for namespace "default", name "wgsecret".
+func defaultTestConfig() *WebhookConfig {
+	cfg := DefaultWebhookConfig()
+	cfg.KubeClient = newWebhookMockClient("default", "wgsecret", map[string][]byte{
+		cni.SecretKeyWGConf: minimalWGConf,
+	})
+	return cfg
 }
 
 // TestMutateHandler_InitContainerInjection tests that init containers are injected correctly
@@ -64,7 +98,6 @@ func TestMutateHandler_InitContainerInjection(t *testing.T) {
 					},
 					Annotations: map[string]string{
 						"gopher.cni/wgconf-secret": "wgsecret",
-						"gopher.cni/dns-tunneled":  "false",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -131,7 +164,6 @@ func TestMutateHandler_InitContainerInjection(t *testing.T) {
 					},
 					Annotations: map[string]string{
 						"gopher.cni/wgconf-secret": "wgsecret",
-						"gopher.cni/dns-tunneled":  "false",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -163,7 +195,6 @@ func TestMutateHandler_InitContainerInjection(t *testing.T) {
 					},
 					Annotations: map[string]string{
 						"gopher.cni/wgconf-secret": "wgsecret",
-						"gopher.cni/dns-tunneled":  "false",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -189,7 +220,6 @@ func TestMutateHandler_InitContainerInjection(t *testing.T) {
 					},
 					Annotations: map[string]string{
 						"gopher.cni/wgconf-secret": "wgsecret",
-						"gopher.cni/dns-tunneled":  "false",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -214,7 +244,7 @@ func TestMutateHandler_InitContainerInjection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := DefaultWebhookConfig()
+			config := defaultTestConfig()
 			handler := NewMutateHandler(config)
 			ar := createAdmissionReview(tt.pod)
 			response := handler.mutate(ar)
@@ -268,7 +298,7 @@ func TestMutateHandler_InitContainerInjection(t *testing.T) {
 // TestMutateHandler_PatchOperations tests the patch operations are correct
 func TestMutateHandler_PatchOperations(t *testing.T) {
 	t.Run("patch for pod with no init containers creates array", func(t *testing.T) {
-		config := DefaultWebhookConfig()
+		config := defaultTestConfig()
 		handler := NewMutateHandler(config)
 
 		pod := &corev1.Pod{
@@ -349,7 +379,7 @@ func TestMutateHandler_PatchOperations(t *testing.T) {
 	})
 
 	t.Run("patch for pod with existing init containers appends to array", func(t *testing.T) {
-		config := DefaultWebhookConfig()
+		config := defaultTestConfig()
 		handler := NewMutateHandler(config)
 
 		pod := &corev1.Pod{
@@ -428,7 +458,7 @@ func TestMutateHandler_PatchOperations(t *testing.T) {
 
 // TestMutateHandler_HTTPEndpoint tests the HTTP endpoint handling
 func TestMutateHandler_HTTPEndpoint(t *testing.T) {
-	config := DefaultWebhookConfig()
+	config := defaultTestConfig()
 	handler := NewMutateHandler(config)
 
 	t.Run("valid admission review", func(t *testing.T) {
@@ -523,7 +553,7 @@ func TestMutateHandler_HTTPEndpoint(t *testing.T) {
 
 // TestMutateHandler_InitContainerConfiguration tests the init container configuration
 func TestMutateHandler_InitContainerConfiguration(t *testing.T) {
-	config := DefaultWebhookConfig()
+	config := defaultTestConfig()
 	config.Image = "custom-image:v1.2.3"
 	handler := NewMutateHandler(config)
 
@@ -601,67 +631,3 @@ func TestMutateHandler_InitContainerConfiguration(t *testing.T) {
 	}
 }
 
-func TestGetDNSServersFromSecret(t *testing.T) {
-	// A syntactically valid WireGuard private key (32 zero bytes, base64-encoded)
-	const validKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-
-	wgConf := func(dns string) []byte {
-		conf := "[Interface]\nPrivateKey = " + validKey + "\nAddress = 10.0.0.1/24\n"
-		if dns != "" {
-			conf += "DNS = " + dns + "\n"
-		}
-		return []byte(conf)
-	}
-
-	tests := []struct {
-		name      string
-		wgConf    []byte
-		expectDNS []string
-	}{
-		{
-			name:      "IPv4 only — all returned",
-			wgConf:    wgConf("1.1.1.1, 8.8.8.8"),
-			expectDNS: []string{"1.1.1.1", "8.8.8.8"},
-		},
-		{
-			name:      "IPv6 only — none returned",
-			wgConf:    wgConf("2606:4700:4700::1111"),
-			expectDNS: nil,
-		},
-		{
-			name:      "mixed IPv4 and IPv6 — only IPv4 returned",
-			wgConf:    wgConf("1.1.1.1, 2606:4700:4700::1111, 8.8.8.8"),
-			expectDNS: []string{"1.1.1.1", "8.8.8.8"},
-		},
-		{
-			name:      "no DNS field — returns nil",
-			wgConf:    wgConf(""),
-			expectDNS: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := newWebhookMockClient("default", "wg-secret", map[string][]byte{
-				cni.SecretKeyWGConf: tt.wgConf,
-			})
-			config := DefaultWebhookConfig()
-			config.KubeClient = client
-			handler := NewMutateHandler(config)
-
-			got, err := handler.getDNSServersFromSecret("default", "wg-secret")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if len(got) != len(tt.expectDNS) {
-				t.Fatalf("expected %v, got %v", tt.expectDNS, got)
-			}
-			for i, addr := range got {
-				if addr != tt.expectDNS[i] {
-					t.Errorf("index %d: expected %s, got %s", i, tt.expectDNS[i], addr)
-				}
-			}
-		})
-	}
-}

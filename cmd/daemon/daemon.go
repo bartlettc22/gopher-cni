@@ -78,12 +78,12 @@ func Run() {
 		}
 
 		webhookConfig := &webhook.WebhookConfig{
-			Image:       config.WebhookImage,
-			Port:        config.WebhookPort,
-			TLSDisable:  config.WebhookTLSDisable,
-			TLSCertPath: config.WebhookTLSCertPath,
-			TLSKeyPath:  config.WebhookTLSKeyPath,
-			KubeClient:  kubeClient,
+			Image:        config.WebhookImage,
+			CoreDNSImage: config.WebhookCoreDNSImage,
+			Port:         config.WebhookPort,
+			TLSCertPath:  config.WebhookTLSCertPath,
+			TLSKeyPath:   config.WebhookTLSKeyPath,
+			KubeClient:   kubeClient,
 		}
 
 		server := webhook.NewServer(webhookConfig)

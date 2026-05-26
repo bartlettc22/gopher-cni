@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/bartlettc22/gopher-cni/internal/utils"
+	"github.com/bartlettc22/gopher-cni/internal/webhook"
 )
 
 // Config struct defines the CNI installation options
@@ -29,11 +30,11 @@ type Config struct {
 
 	UDSSocketAddress string
 
-	WebhookImage       string
-	WebhookPort        int
-	WebhookTLSDisable  bool
-	WebhookTLSCertPath string
-	WebhookTLSKeyPath  string
+	WebhookImage        string
+	WebhookCoreDNSImage string
+	WebhookPort         int
+	WebhookTLSCertPath  string
+	WebhookTLSKeyPath   string
 }
 
 // LoadConfig parses command-line flags and environment variables to build configuration
@@ -45,11 +46,11 @@ func LoadConfig() (*Config, error) {
 		CNIBinSourceDir:    utils.GetEnv("CNI_BIN_SOURCE_DIR", "/cni"),
 		CNIBinTargetDir:    utils.GetEnv("CNI_BIN_TARGET_DIR", "/opt/cni/bin"),
 		UDSSocketAddress:   utils.GetEnv("UDS_SOCKET_ADDRESS", "/var/run/gopher-cni/log.sock"),
-		WebhookImage:       utils.GetEnv("WEBHOOK_IMAGE", ""),
-		WebhookPort:        utils.GetEnv("WEBHOOK_PORT", 8443),
-		WebhookTLSDisable:  utils.GetEnv("WEBHOOK_TLS_DISABLE", false),
-		WebhookTLSCertPath: utils.GetEnv("WEBHOOK_TLS_CERT_PATH", "/etc/webhook/certs/tls.crt"),
-		WebhookTLSKeyPath:  utils.GetEnv("WEBHOOK_TLS_KEY_PATH", "/etc/webhook/certs/tls.key"),
+		WebhookImage:        utils.GetEnv("WEBHOOK_IMAGE", ""),
+		WebhookCoreDNSImage: utils.GetEnv("WEBHOOK_COREDNS_IMAGE", webhook.DefaultCoreDNSImage),
+		WebhookPort:         utils.GetEnv("WEBHOOK_PORT", 8443),
+		WebhookTLSCertPath:  utils.GetEnv("WEBHOOK_TLS_CERT_PATH", "/etc/webhook/certs/tls.crt"),
+		WebhookTLSKeyPath:   utils.GetEnv("WEBHOOK_TLS_KEY_PATH", "/etc/webhook/certs/tls.key"),
 	}
 
 	return config, config.Validate()
@@ -69,13 +70,11 @@ func (c *Config) Validate() error {
 	if c.WebhookPort <= 0 || c.WebhookPort > 65535 {
 		return fmt.Errorf("webhook-port must be between 1 and 65535")
 	}
-	if !c.WebhookTLSDisable {
-		if c.WebhookTLSCertPath == "" {
-			return fmt.Errorf("webhook-tls-cert is required when TLS is enabled")
-		}
-		if c.WebhookTLSKeyPath == "" {
-			return fmt.Errorf("webhook-tls-key is required when TLS is enabled")
-		}
+	if c.WebhookTLSCertPath == "" {
+		return fmt.Errorf("webhook-tls-cert is required")
+	}
+	if c.WebhookTLSKeyPath == "" {
+		return fmt.Errorf("webhook-tls-key is required")
 	}
 	if c.WebhookImage == "" {
 		return fmt.Errorf("webhook-image is required")

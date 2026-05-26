@@ -6,7 +6,7 @@ import (
 
 	"github.com/bartlettc22/gopher-cni/cmd/daemon"
 	initvalidation "github.com/bartlettc22/gopher-cni/cmd/init-validation"
-	"github.com/bartlettc22/gopher-cni/cmd/sidecar"
+	writecorednsconfig "github.com/bartlettc22/gopher-cni/cmd/write-coredns-config"
 	"github.com/bartlettc22/gopher-cni/internal/logging"
 )
 
@@ -27,9 +27,9 @@ func main() {
 		daemon.Run()
 	case "init-validation":
 		initvalidation.Run()
-	case "sidecar":
-		sidecar.Run()
+	case "write-coredns-config":
+		writecorednsconfig.Run()
 	default:
-		logging.Fatal(fmt.Errorf("unknown mode: %s (valid modes: daemon, init-validation, sidecar)", config.Mode))
+		logging.Fatal(fmt.Errorf("unknown mode: %s (valid modes: daemon, init-validation, write-coredns-config)", config.Mode))
 	}
 }

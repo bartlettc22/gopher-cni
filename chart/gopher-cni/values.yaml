@@ -30,7 +30,6 @@ webhook:
 
   # TLS certificate paths (mounted from secret)
   tls:
-    enabled: true
     certPath: "/etc/webhook/certs/tls.crt"
     keyPath: "/etc/webhook/certs/tls.key"
   # Webhook failure policy (Fail or Ignore)

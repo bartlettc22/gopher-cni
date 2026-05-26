@@ -14,9 +14,9 @@ The `gopher.cni/enabled` label serves as the primary gate for the Gopher CNI fea
 |---|---|---|
 |`gopher.cni/wgconf-secret`|The name of a Kubernetes secret containing WireGuard configuration. See below for Secret definition. Required if `gopher.cni/enabled` label is set to `"true"`.|`""`|
 |`gopher.cni/cni-mode`|Which CNI operation mode to use (see below).  Allowed values: `pod-origin`, `host-origin`|`pod-origin`|
-|`gopher.cni/dns-tunneled`|Whether to tunnel DNS traffic. DNS server address is taken from the WireGuard config. If not specified in the config, no resolvers will be added.|`true`|
 |`gopher.cni/split-tunnel-cidrs`|Comma-separated list of CIDRs to route via the pod's original default interface instead of the WireGuard tunnel. See [Split Tunneling](#split-tunneling) below.|`""`|
 |`gopher.cni/split-tunnel-overlap`|Controls how the webhook handles split-tunnel CIDRs that overlap with WireGuard addresses or DNS servers. Set to `allow` to permit less-specific overlaps. See [Split Tunneling](#split-tunneling) below.|`""`|
+|`gopher.cni/split-tunnel-dns-zones`|Comma-separated list of DNS zones to resolve via the cluster DNS server instead of the WireGuard tunnel DNS. See [Split DNS](#split-dns) below.|`""`|
 
 
 ### Complete Pod Example
@@ -30,9 +30,9 @@ metadata:
   annotations:
     gopher.cni/wgconf-secret: "my-wireguard-config"
     gopher.cni/cni-mode: "host-origin"
-    gopher.cni/dns-tunneled: "true"
     gopher.cni/split-tunnel-cidrs: "10.96.0.0/12,10.244.0.0/16"
     gopher.cni/split-tunnel-overlap: "allow"
+    gopher.cni/split-tunnel-dns-zones: "cluster.local,svc.cluster.local"
 spec:
   containers:
   - name: app
@@ -134,8 +134,28 @@ For example, with a WireGuard address of `10.2.0.0/24` and DNS server `10.2.0.1`
 | `10.2.0.5/32` | More specific than WireGuard `/24` | Always rejected |
 
 ## DNS Tunneling
-The CNI plugin can tunnel DNS traffic through the WireGuard tunnel.  This is enabled by setting the `gopher.cni/dns-tunneled` annotation to `true` (default).  The DNS server address is taken from the WireGuard configuration.
+When the WireGuard configuration includes a `DNS =` entry, the CNI plugin automatically configures the pod to use that DNS server. All DNS queries from the pod are routed through the WireGuard tunnel to the tunnel's DNS resolver.
 
-If enabled and the WireGuard configuration does not specify a DNS server, no DNS resolvers will be added to the pod.
+If the WireGuard configuration does not specify a DNS server, the pod's DNS configuration is left unchanged. In most cases this will cause all DNS resolution to fail, because the cluster's internal DNS server (e.g. `kube-dns`) is not reachable through the WireGuard tunnel. It is strongly recommended to always include a `DNS =` entry in the WireGuard configuration, or to use `gopher.cni/split-tunnel-dns-zones` to keep cluster DNS reachable.
 
-If disabled, the pod's DNS resolvers will be used as normal (typically through the cluster's default DNS service).
+## Split DNS
+Split DNS allows specific DNS zones to be resolved by the cluster DNS server (typically `kube-dns`) while all other DNS traffic continues through the WireGuard tunnel resolver. This is useful for pods that need to resolve both cluster-internal names (e.g. Kubernetes services) and external names via the VPN.
+
+This is configured via the `gopher.cni/split-tunnel-dns-zones` annotation:
+
+```yaml
+annotations:
+  gopher.cni/wgconf-secret: "my-wg-config"
+  gopher.cni/split-tunnel-dns-zones: "cluster.local,svc.cluster.local"
+```
+
+When this annotation is set, the mutating webhook:
+1. Injects a CoreDNS sidecar container into the pod.
+2. Generates a CoreDNS configuration that forwards the listed zones to the cluster DNS server (discovered from the `kube-dns` service in `kube-system`) and forwards all other queries to the WireGuard tunnel's DNS resolver.
+3. Sets the pod's `dnsPolicy` to `None` and `dnsConfig.nameservers` to `127.0.0.1` so all DNS queries go through the sidecar.
+
+The annotation value is a comma-separated list of zone suffixes. A trailing dot is optional; both `cluster.local` and `cluster.local.` are accepted.
+
+> **Note**: If the WireGuard configuration does not include a `DNS =` entry, queries for the listed zones will still be forwarded to the cluster DNS server, but all other DNS resolution will fail.
+
+> **Note**: Because DNS queries to the cluster DNS server must reach the cluster network (e.g. the `kube-dns` service IP), you almost certainly need to pair `split-tunnel-dns-zones` with `split-tunnel-cidrs` that includes your cluster's service and pod CIDRs. Without this, DNS traffic destined for `kube-dns` will be routed into the WireGuard tunnel and will not reach the cluster DNS server.
