@@ -122,4 +122,3 @@ func main() {
 
 	log.Info("shutdown complete")
 }
-

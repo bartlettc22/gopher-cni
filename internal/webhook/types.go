@@ -70,12 +70,9 @@ func DefaultWebhookConfig() *WebhookConfig {
 // createInitContainer creates the CNI validator init container
 func (c *WebhookConfig) createInitContainer() corev1.Container {
 	return corev1.Container{
-		Name:    InitContainerName,
-		Image:   c.Image,
-		Command: []string{"/gopher"},
-		Args: []string{
-			"init-validation",
-		},
+		Name:  InitContainerName,
+		Image: c.Image,
+		Args:  []string{"init-validation"},
 	}
 }
 
@@ -84,10 +81,9 @@ func (c *WebhookConfig) createInitContainer() corev1.Container {
 // the COREFILE environment variable so it can be generated per-pod at admission time.
 func (c *WebhookConfig) createCoreDNSConfigInitContainer(corefile string) corev1.Container {
 	return corev1.Container{
-		Name:    CoreDNSConfigContainerName,
-		Image:   c.Image,
-		Command: []string{"/gopher"},
-		Args:    []string{"write-coredns-config"},
+		Name:  CoreDNSConfigContainerName,
+		Image: c.Image,
+		Args:  []string{"write-coredns-config"},
 		Env: []corev1.EnvVar{{
 			Name:  "COREFILE",
 			Value: corefile,

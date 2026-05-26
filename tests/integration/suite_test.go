@@ -31,9 +31,9 @@ const (
 	setupTimeout    = 5 * time.Minute
 	teardownTimeout = 2 * time.Minute
 
-	installerImageRef = "gopher-cni-installer:integration"
-	webhookImageRef   = "gopher-cni-webhook:integration"
-	sidecarImageRef   = "gopher-cni-sidecar:integration"
+	installerImageRef  = "gopher-cni-installer:integration"
+	webhookImageRef    = "gopher-cni-webhook:integration"
+	sidecarImageRef    = "gopher-cni-sidecar:integration"
 	helmRelease        = "gopher-cni"
 	helmNamespace      = "gopher-cni-system"
 	helmChart          = "../../chart/gopher-cni"
