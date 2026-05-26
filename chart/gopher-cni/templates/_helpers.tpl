@@ -41,11 +41,27 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
-Selector labels
+Selector labels (base — do not use directly on resources that need component scoping)
 */}}
 {{- define "gopher-cni.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "gopher-cni.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Installer DaemonSet selector labels
+*/}}
+{{- define "gopher-cni.installerSelectorLabels" -}}
+{{ include "gopher-cni.selectorLabels" . }}
+app.kubernetes.io/component: installer
+{{- end }}
+
+{{/*
+Webhook Deployment selector labels
+*/}}
+{{- define "gopher-cni.webhookSelectorLabels" -}}
+{{ include "gopher-cni.selectorLabels" . }}
+app.kubernetes.io/component: webhook
 {{- end }}
 
 {{/*
@@ -108,10 +124,10 @@ Create the name of the CA secret
 Get the issuer name to use
 */}}
 {{- define "gopher-cni.issuerName" -}}
-{{- if .Values.certificate.issuer.create }}
+{{- if .Values.webhook.certificate.issuer.create }}
 {{- include "gopher-cni.caIssuerName" . }}
 {{- else }}
-{{- .Values.certificate.issuer.name }}
+{{- .Values.webhook.certificate.issuer.name }}
 {{- end }}
 {{- end }}
 
@@ -119,5 +135,5 @@ Get the issuer name to use
 Get the issuer kind
 */}}
 {{- define "gopher-cni.issuerKind" -}}
-{{- .Values.certificate.issuer.kind | default "Issuer" }}
+{{- .Values.webhook.certificate.issuer.kind | default "Issuer" }}
 {{- end }}

@@ -11,15 +11,26 @@ const (
 	// InitContainerName is the name of the injected init container
 	InitContainerName = "gopher-cni-validator"
 
+<<<<<<< Updated upstream
 	// SidecarContainerName is the name of the injected sidecar container
 	SidecarContainerName = "gopher-cni-sidecar"
+=======
+	// CoreDNSConfigContainerName is the name of the init container that writes the CoreDNS Corefile
+	CoreDNSConfigContainerName = "gopher-cni-coredns-config"
+
+	// CoreDNSContainerName is the name of the injected CoreDNS sidecar container
+	CoreDNSContainerName = "gopher-cni-coredns"
+
+	// CoreDNSVolumeName is the emptyDir volume shared between the CoreDNS config init container and sidecar
+	CoreDNSVolumeName = "gopher-cni-coredns"
+>>>>>>> Stashed changes
 )
 
 // PatchOperation represents a JSON patch operation
 type PatchOperation struct {
 	Op    string      `json:"op"`
 	Path  string      `json:"path"`
-	Value interface{} `json:"value,omitempty"`
+	Value any `json:"value,omitempty"`
 }
 
 // WebhookConfig holds the webhook configuration
@@ -46,10 +57,11 @@ type WebhookConfig struct {
 // DefaultWebhookConfig returns the default webhook configuration
 func DefaultWebhookConfig() *WebhookConfig {
 	return &WebhookConfig{
-		Image:       "gopher-cni:latest",
-		TLSCertPath: "/etc/webhook/certs/tls.crt",
-		TLSKeyPath:  "/etc/webhook/certs/tls.key",
-		Port:        8443,
+		Image:        "gopher-cni:latest",
+		CoreDNSImage: "",
+		TLSCertPath:  "/etc/webhook/certs/tls.crt",
+		TLSKeyPath:   "/etc/webhook/certs/tls.key",
+		Port:         8443,
 	}
 }
 

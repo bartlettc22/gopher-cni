@@ -60,7 +60,7 @@ tasks:
       COVER_FLAGS:
         sh: '[ -n "{{.COVER}}" ] && echo "-coverprofile=coverage.out -covermode=atomic" || echo ""'
     cmds:
-    - go test -race {{.VERBOSE_FLAG}} {{.COVER_FLAGS}} ./...
+    - go test -race -cover {{.VERBOSE_FLAG}} {{.COVER_FLAGS}} ./...
 
   _k3d-install:
     internal: true
@@ -95,12 +95,13 @@ tasks:
     - go mod vendor
 
   docker:build:
-    desc: Build Docker image (ARCH, REGISTRY, IMAGE, VERSION, PUSH, PLATFORMS)
+    desc: Build Docker image (TARGET, ARCH, REGISTRY, IMAGE, VERSION, PUSH, PLATFORMS)
     dir: '{{.ROOT_DIR}}'
     vars:
+      TARGET: '{{default "installer" .TARGET}}'
       ARCH: '{{default "amd64" .ARCH}}'
       REGISTRY: '{{default "ghcr.io/bartlettc22" .REGISTRY}}'
-      IMAGE: '{{default "gopher-cni" .IMAGE}}'
+      IMAGE: '{{default (printf "gopher-cni-%s" .TARGET) .IMAGE}}'
       VERSION: '{{default "dev" .VERSION}}'
       PUSH: '{{default "false" .PUSH}}'
       PLATFORMS:
@@ -130,6 +131,7 @@ tasks:
       fi
     - |
       docker buildx build \
+        --target {{.TARGET}} \
         --platform {{.PLATFORMS}} \
         --build-arg VERSION={{.VERSION}} \
         --tag {{.TAG}} \
@@ -138,17 +140,35 @@ tasks:
         .
 
   docker:publish:
-    desc: Publish multi-arch (amd64/arm64) Docker image to registry
+    desc: Publish multi-arch (amd64/arm64) Docker images (installer + webhook) to registry
     vars:
       REGISTRY: '{{default "ghcr.io/bartlettc22" .REGISTRY}}'
-      IMAGE: '{{default "gopher-cni" .IMAGE}}'
       VERSION: '{{default "dev" .VERSION}}'
       INSTALL_QEMU_WITHOUT_PROMPT: '{{default "false" .INSTALL_QEMU_WITHOUT_PROMPT}}'
     cmds:
     - task: docker:build
       vars:
         REGISTRY: '{{.REGISTRY}}'
-        IMAGE: '{{.IMAGE}}'
+        TARGET: installer
+        IMAGE: gopher-cni-installer
+        VERSION: '{{.VERSION}}'
+        PLATFORMS: linux/amd64,linux/arm64
+        PUSH: "true"
+        INSTALL_QEMU_WITHOUT_PROMPT: '{{.INSTALL_QEMU_WITHOUT_PROMPT}}'
+    - task: docker:build
+      vars:
+        REGISTRY: '{{.REGISTRY}}'
+        TARGET: webhook
+        IMAGE: gopher-cni-webhook
+        VERSION: '{{.VERSION}}'
+        PLATFORMS: linux/amd64,linux/arm64
+        PUSH: "true"
+        INSTALL_QEMU_WITHOUT_PROMPT: '{{.INSTALL_QEMU_WITHOUT_PROMPT}}'
+    - task: docker:build
+      vars:
+        REGISTRY: '{{.REGISTRY}}'
+        TARGET: sidecar
+        IMAGE: gopher-cni-sidecar
         VERSION: '{{.VERSION}}'
         PLATFORMS: linux/amd64,linux/arm64
         PUSH: "true"

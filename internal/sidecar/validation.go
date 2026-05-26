@@ -1,4 +1,4 @@
-package initvalidation
+package sidecar
 
 import (
 	"errors"
@@ -12,7 +12,7 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-func Run() {
+func RunInitValidation() {
 	log := slog.With("component", "init-validation")
 	log.Info("starting init validation")
 
@@ -24,7 +24,6 @@ func Run() {
 }
 
 func validate(log *slog.Logger, nl pkgnet.NetlinkClient, ifaceName string) error {
-	// Check interface exists
 	log.Info("detecting interface", "name", ifaceName)
 	link, err := nl.LinkByName(ifaceName)
 	if err != nil {
@@ -38,13 +37,11 @@ func validate(log *slog.Logger, nl pkgnet.NetlinkClient, ifaceName string) error
 	}
 	log.Info("interface found", "name", ifaceName)
 
-	// Check interface is UP
 	if link.Attrs().Flags&net.FlagUp == 0 {
 		return fmt.Errorf("interface %q is not up", ifaceName)
 	}
 	log.Info("interface is up", "name", ifaceName)
 
-	// Check interface has an IP address assigned
 	addrs, err := nl.AddrList(link, netlink.FAMILY_V4)
 	if err != nil {
 		return fmt.Errorf("error listing addresses for interface %q: %w", ifaceName, err)
@@ -56,7 +53,3 @@ func validate(log *slog.Logger, nl pkgnet.NetlinkClient, ifaceName string) error
 
 	return nil
 }
-
-// TODO: implement
-// deletePod removes the pod in an attempt to trigger a recreation of the correct netework interface
-// func deletePod() {}

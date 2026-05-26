@@ -40,19 +40,6 @@ task go:lint
 task helm:lint
 ```
 
-## Run Locally
-
-```bash
-# Build
-go build -o bin/gopher-cni ./cmd/main
-
-# Run daemon mode (default)
-./bin/gopher-cni --mode=daemon
-
-# Run init-validation mode
-./bin/gopher-cni --mode=init-validation
-```
-
 ## Integration Tests
 
 Integration tests spin up a k3d cluster and run end-to-end scenarios. Requires `k3d`, `kubectl`, `helm`, and `docker`.

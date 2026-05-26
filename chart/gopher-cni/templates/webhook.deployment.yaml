@@ -1,0 +1,80 @@
+{{- $image := printf "%s:%s" .Values.webhook.image.repository (.Values.webhook.image.tag | default .Chart.AppVersion) -}}
+{{- $sidecarImage := printf "%s:%s" .Values.sidecar.image.repository (.Values.sidecar.image.tag | default .Chart.AppVersion) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gopher-cni.fullname" . }}-webhook
+  labels:
+    {{- include "gopher-cni.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.webhook.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "gopher-cni.webhookSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.webhook.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "gopher-cni.webhookSelectorLabels" . | nindent 8 }}
+        {{- with .Values.webhook.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "gopher-cni.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.webhook.podSecurityContext | nindent 8 }}
+      containers:
+      - name: gopher-cni-webhook
+        image: "{{ $image }}"
+        imagePullPolicy: {{ .Values.webhook.image.pullPolicy }}
+        env:
+        - name: LOG_LEVEL
+          value: {{ .Values.logLevel }}
+        - name: LOG_FORMAT
+          value: {{ .Values.logFormat }}
+        - name: WEBHOOK_SIDECAR_IMAGE
+          value: {{ $sidecarImage | quote }}
+        - name: WEBHOOK_COREDNS_IMAGE
+          value: {{ .Values.webhook.config.coreDNSImage | quote }}
+        - name: WEBHOOK_PORT
+          value: {{ .Values.webhook.config.port | quote }}
+        - name: WEBHOOK_TLS_CERT_PATH
+          value: {{ .Values.webhook.config.tls.certPath }}
+        - name: WEBHOOK_TLS_KEY_PATH
+          value: {{ .Values.webhook.config.tls.keyPath }}
+        ports:
+        - name: webhook
+          containerPort: {{ .Values.webhook.config.port }}
+          protocol: TCP
+        livenessProbe:
+          {{- toYaml .Values.webhook.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.webhook.readinessProbe | nindent 10 }}
+        resources:
+          {{- toYaml .Values.webhook.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.webhook.securityContext | nindent 10 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: certs
+          mountPath: /etc/webhook/certs
+          readOnly: true
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: certs
+        secret:
+          secretName: {{ include "gopher-cni.certificateSecretName" . }}
+          defaultMode: 0640
+      {{- with .Values.webhook.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

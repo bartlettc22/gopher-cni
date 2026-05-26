@@ -1,0 +1,91 @@
+{{- $image := printf "%s:%s" .Values.installer.image.repository (.Values.installer.image.tag | default .Chart.AppVersion) -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "gopher-cni.fullname" . }}
+  labels:
+    {{- include "gopher-cni.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "gopher-cni.installerSelectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      {{- with .Values.installer.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "gopher-cni.installerSelectorLabels" . | nindent 8 }}
+        {{- with .Values.installer.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "gopher-cni.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.installer.podSecurityContext | nindent 8 }}
+      containers:
+      - name: gopher-cni-installer
+        image: "{{ $image }}"
+        imagePullPolicy: {{ .Values.installer.image.pullPolicy }}
+        env:
+        - name: LOG_LEVEL
+          value: {{ .Values.logLevel }}
+        - name: LOG_FORMAT
+          value: {{ .Values.logFormat }}
+        - name: MOUNTED_HOST_DIR
+          value: {{ .Values.installer.config.mountedHostDir }}
+        - name: CNI_NET_DIR
+          value: {{ .Values.installer.config.cniNetDir }}
+        - name: CNI_BIN_TARGET_DIR
+          value: {{ .Values.installer.config.cniBinTargetDir }}
+        - name: UDS_SOCKET_ADDRESS
+          value: {{ printf "%s/log.sock" .Values.installer.config.udsSocketDir }}
+        resources:
+          {{- toYaml .Values.installer.resources | nindent 10 }}
+        securityContext:
+          # Run as root to allow the CNI plugin to write to the host CNI directory
+          runAsUser: 0
+          {{- with .Values.installer.securityContext }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        volumeMounts:
+        - name: cni-bin
+          mountPath: {{ printf "%s/%s" .Values.installer.config.mountedHostDir ( trimPrefix "/" .Values.installer.config.cniBinTargetDir ) }}
+        - name: cni-config
+          mountPath: {{ printf "%s/%s" .Values.installer.config.mountedHostDir ( trimPrefix "/" .Values.installer.config.cniNetDir ) }}
+        - name: uds-socket
+          mountPath: {{ printf "%s/%s" .Values.installer.config.mountedHostDir ( trimPrefix "/" .Values.installer.config.udsSocketDir ) }}
+      volumes:
+      - name: cni-bin
+        hostPath:
+          path: {{ .Values.installer.config.cniBinTargetDir }}
+          type: Directory
+      - name: cni-config
+        hostPath:
+          path: {{ .Values.installer.config.cniNetDir }}
+          type: Directory
+      - name: uds-socket
+        hostPath:
+          path: {{ .Values.installer.config.udsSocketDir }}
+          type: DirectoryOrCreate
+      {{- with .Values.installer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.installer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.installer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -5,11 +5,11 @@ metadata:
   labels:
     {{- include "gopher-cni.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ .Values.webhook.service.type }}
   ports:
-  - port: {{ .Values.service.port }}
-    targetPort: {{ .Values.service.targetPort }}
+  - port: {{ .Values.webhook.service.port }}
+    targetPort: {{ .Values.webhook.service.targetPort }}
     protocol: TCP
     name: https
   selector:
-    {{- include "gopher-cni.selectorLabels" . | nindent 4 }}
+    {{- include "gopher-cni.webhookSelectorLabels" . | nindent 4 }}

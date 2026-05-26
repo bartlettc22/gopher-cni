@@ -1,4 +1,4 @@
-package initvalidation
+package sidecar
 
 import (
 	"fmt"
@@ -12,7 +12,6 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-// fakeLink implements netlink.Link for use in tests.
 type fakeLink struct {
 	netlink.LinkAttrs
 }

@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0]
+
+### Breaking Changes
+- `values.yaml` fully restructured — installer settings under `installer.*`, webhook settings under `webhook.*`; `certificate.*` and `service.*` moved under `webhook.*`; three separate images now required: `installer.image`, `webhook.image`, `sidecar.image`
+
+### Added
+- Webhook now runs as a `Deployment` (non-root, `runAsUser: 65534`) instead of on the DaemonSet, enabling independent scaling and privilege separation
+- New `gopher-cni-sidecar` image consolidates all injected pod containers (`init-validation`, `write-coredns-config`, and future subcommands); sourced from `sidecar.image` in values
+- `ClusterRole`: added `services` to the `get`/`list` rules
+- CoreDNS image version pinned to `docker.io/coredns/coredns:1.13.1` in `webhook.config.coreDNSImage`
+
+## [0.8.0]
+
+### Added
+- `gopher.cni/split-tunnel-dns-zones` annotation: comma-separated list of DNS zones to resolve via the cluster DNS server (`kube-dns`); all other queries are forwarded to the WireGuard tunnel resolver. When set, the webhook injects a CoreDNS sidecar and sets `dnsPolicy: None` with the pod's nameserver pointed at `127.0.0.1`
+- `WEBHOOK_COREDNS_IMAGE` env var to configure the CoreDNS sidecar image (default: `docker.io/coredns/coredns:1.13.1`)
+- `write-coredns-config` binary subcommand: writes the `COREFILE` environment variable to `/etc/coredns/Corefile` for use by the CoreDNS config init container
+
+### Changed
+- Helm chart: `WEBHOOK_TLS_KEY_PATH` env var is now correctly set from `webhook.tls.keyPath` (was previously missing from the DaemonSet template)
+
+### Removed
+- `gopher.cni/dns-tunneled` annotation — DNS tunneling is now always-on when the WireGuard config specifies a DNS server
+- `gopher.cni/nat-pmp` annotation — was accepted by the validating webhook but never implemented
+- `WEBHOOK_TLS_DISABLE` env var and `webhook.tls.enabled` Helm value — TLS is now mandatory
+
+### Fixed
+- Validating webhook now correctly falls back to `req.Namespace` when the pod's `.metadata.namespace` is empty on `CREATE` requests; previously the split-tunnel CIDR overlap check was silently skipped for all newly created pods
+
 ## [0.7.0]
 
 ### Added

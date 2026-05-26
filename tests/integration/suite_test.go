@@ -31,7 +31,9 @@ const (
 	setupTimeout    = 5 * time.Minute
 	teardownTimeout = 2 * time.Minute
 
-	imageRef           = "gopher-cni:integration"
+	installerImageRef = "gopher-cni-installer:integration"
+	webhookImageRef   = "gopher-cni-webhook:integration"
+	sidecarImageRef   = "gopher-cni-sidecar:integration"
 	helmRelease        = "gopher-cni"
 	helmNamespace      = "gopher-cni-system"
 	helmChart          = "../../chart/gopher-cni"
@@ -140,34 +142,46 @@ func kubectl(ctx context.Context, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-// buildImage builds the gopher-cni Docker image tagged for integration testing.
+// buildImage builds all three gopher-cni Docker images tagged for integration testing.
 func buildImage(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, buildTimeout)
 	defer cancel()
 
-	fmt.Printf("Building image %q...\n", imageRef)
-
-	cmd := exec.CommandContext(ctx, "docker", "build", "-f", "../../build/Dockerfile", "-t", imageRef, "../..")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker build: %w", err)
+	images := []struct{ target, ref string }{
+		{"installer", installerImageRef},
+		{"webhook", webhookImageRef},
+		{"sidecar", sidecarImageRef},
 	}
 
-	fmt.Printf("Image %q built\n", imageRef)
+	for _, img := range images {
+		fmt.Printf("Building image %q (target: %s)...\n", img.ref, img.target)
+		cmd := exec.CommandContext(ctx, "docker", "build",
+			"-f", "../../build/Dockerfile",
+			"--target", img.target,
+			"-t", img.ref,
+			"../..")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("docker build %s: %w", img.target, err)
+		}
+		fmt.Printf("Image %q built\n", img.ref)
+	}
 	return nil
 }
 
-// importImage loads the Docker image into the k3d cluster nodes so pods can
-// use it without a registry.
+// importImage loads all three gopher-cni Docker images into the k3d cluster nodes
+// so pods can use them without a registry.
 func importImage(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, importTimeout)
 	defer cancel()
 
-	fmt.Printf("Importing image %q into cluster %q...\n", imageRef, clusterName)
+	refs := []string{installerImageRef, webhookImageRef, sidecarImageRef}
+	fmt.Printf("Importing images %v into cluster %q...\n", refs, clusterName)
 
-	cmd := exec.CommandContext(ctx, "k3d", "image", "import", imageRef, "--cluster", clusterName)
+	args := append([]string{"image", "import"}, refs...)
+	args = append(args, "--cluster", clusterName)
+	cmd := exec.CommandContext(ctx, "k3d", args...)
 	cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfigFile)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -176,7 +190,7 @@ func importImage(ctx context.Context) error {
 		return fmt.Errorf("k3d image import: %w", err)
 	}
 
-	fmt.Printf("Image %q imported\n", imageRef)
+	fmt.Printf("Images imported into cluster %q\n", clusterName)
 	return nil
 }
 
@@ -380,10 +394,16 @@ func installApp(ctx context.Context) error {
 		"--kubeconfig", kubeconfigFile,
 		"--namespace", helmNamespace,
 		"--create-namespace",
-		"--set", "image.repository=gopher-cni",
-		"--set", "image.tag=integration",
-		"--set", "image.pullPolicy=Never",
-		"--set", "certificate.enabled=false",
+		"--set", "installer.image.repository=gopher-cni-installer",
+		"--set", "installer.image.tag=integration",
+		"--set", "installer.image.pullPolicy=Never",
+		"--set", "webhook.image.repository=gopher-cni-webhook",
+		"--set", "webhook.image.tag=integration",
+		"--set", "webhook.image.pullPolicy=Never",
+		"--set", "sidecar.image.repository=gopher-cni-sidecar",
+		"--set", "sidecar.image.tag=integration",
+		"--set", "sidecar.image.pullPolicy=Never",
+		"--set", "webhook.certificate.enabled=false",
 		"--wait",
 		"--timeout", "2m",
 	)
@@ -524,9 +544,8 @@ func (s *IntegrationSuite) TearDownSuite() {
 	_ = os.Remove(kubeconfigFile)
 }
 
-// TestDaemonSetReady verifies the gopher-cni DaemonSet is fully rolled out
-// with all desired pods running and ready.
-func (s *IntegrationSuite) TestDaemonSetReady() {
+// TestInstallerDaemonSetReady verifies the installer DaemonSet is fully rolled out.
+func (s *IntegrationSuite) TestInstallerDaemonSetReady() {
 	ctx := context.Background()
 
 	_, err := kubectl(ctx,
@@ -534,7 +553,19 @@ func (s *IntegrationSuite) TestDaemonSetReady() {
 		"--namespace", helmNamespace,
 		"--timeout", "60s",
 	)
-	s.Require().NoError(err, "daemonset rollout status")
+	s.Require().NoError(err, "installer daemonset rollout status")
+}
+
+// TestWebhookDeploymentReady verifies the webhook Deployment is fully rolled out.
+func (s *IntegrationSuite) TestWebhookDeploymentReady() {
+	ctx := context.Background()
+
+	_, err := kubectl(ctx,
+		"rollout", "status", "deployment/"+helmRelease+"-webhook",
+		"--namespace", helmNamespace,
+		"--timeout", "60s",
+	)
+	s.Require().NoError(err, "webhook deployment rollout status")
 }
 
 // TestClusterReady verifies the cluster has at least one Ready node.
