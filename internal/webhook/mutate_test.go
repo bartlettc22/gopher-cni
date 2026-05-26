@@ -310,7 +310,6 @@ func TestMutateHandler_PatchOperations(t *testing.T) {
 				},
 				Annotations: map[string]string{
 					"gopher.cni/wgconf-secret": "wgsecret",
-					"gopher.cni/dns-tunneled":  "false",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -391,7 +390,6 @@ func TestMutateHandler_PatchOperations(t *testing.T) {
 				},
 				Annotations: map[string]string{
 					"gopher.cni/wgconf-secret": "wgsecret",
-					"gopher.cni/dns-tunneled":  "false",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -471,7 +469,6 @@ func TestMutateHandler_HTTPEndpoint(t *testing.T) {
 				},
 				Annotations: map[string]string{
 					"gopher.cni/wgconf-secret": "wgsecret",
-					"gopher.cni/dns-tunneled":  "false",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -566,7 +563,6 @@ func TestMutateHandler_InitContainerConfiguration(t *testing.T) {
 			},
 			Annotations: map[string]string{
 				"gopher.cni/wgconf-secret": "wgsecret",
-				"gopher.cni/dns-tunneled":  "false",
 			},
 		},
 		Spec: corev1.PodSpec{
