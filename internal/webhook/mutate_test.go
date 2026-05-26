@@ -630,4 +630,3 @@ func TestMutateHandler_InitContainerConfiguration(t *testing.T) {
 		t.Errorf("expected init container command to be ['/gopher'], got %v", initContainer.Command)
 	}
 }
-

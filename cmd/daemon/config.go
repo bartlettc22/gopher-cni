@@ -41,11 +41,11 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 
 	config := &Config{
-		MountedHostDir:     utils.GetEnv("MOUNTED_HOST_DIR", "/host"),
-		CNINetDir:          utils.GetEnv("CNI_NET_DIR", "/etc/cni/net.d"),
-		CNIBinSourceDir:    utils.GetEnv("CNI_BIN_SOURCE_DIR", "/cni"),
-		CNIBinTargetDir:    utils.GetEnv("CNI_BIN_TARGET_DIR", "/opt/cni/bin"),
-		UDSSocketAddress:   utils.GetEnv("UDS_SOCKET_ADDRESS", "/var/run/gopher-cni/log.sock"),
+		MountedHostDir:      utils.GetEnv("MOUNTED_HOST_DIR", "/host"),
+		CNINetDir:           utils.GetEnv("CNI_NET_DIR", "/etc/cni/net.d"),
+		CNIBinSourceDir:     utils.GetEnv("CNI_BIN_SOURCE_DIR", "/cni"),
+		CNIBinTargetDir:     utils.GetEnv("CNI_BIN_TARGET_DIR", "/opt/cni/bin"),
+		UDSSocketAddress:    utils.GetEnv("UDS_SOCKET_ADDRESS", "/var/run/gopher-cni/log.sock"),
 		WebhookImage:        utils.GetEnv("WEBHOOK_IMAGE", ""),
 		WebhookCoreDNSImage: utils.GetEnv("WEBHOOK_COREDNS_IMAGE", webhook.DefaultCoreDNSImage),
 		WebhookPort:         utils.GetEnv("WEBHOOK_PORT", 8443),

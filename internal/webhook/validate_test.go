@@ -386,8 +386,8 @@ func TestValidateHandler_AnnotationValidation(t *testing.T) {
 		{
 			name: "multiple invalid annotations",
 			annotations: map[string]string{
-				cni.AnnotationWGConfSecret:    "my-secret",
-				cni.AnnotationCNIMode:         "invalid-mode",
+				cni.AnnotationWGConfSecret:     "my-secret",
+				cni.AnnotationCNIMode:          "invalid-mode",
 				cni.AnnotationSplitTunnelCIDRs: "not-a-cidr",
 			},
 			expectedAllow: false,
