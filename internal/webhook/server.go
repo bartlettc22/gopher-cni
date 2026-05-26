@@ -31,21 +31,13 @@ func (s *Server) Run(ctx context.Context) *logging.Error {
 
 	s.log.Info("starting webhook server", "port", s.Config.Port)
 
-	var tlsConfig *tls.Config
-	if !s.Config.TLSDisable {
-		s.log.Info("loading TLS configuration",
-			"tls_cert", s.Config.TLSCertPath,
-			"tls_key", s.Config.TLSKeyPath,
-		)
-
-		// Load TLS certificates
-		var err error
-		tlsConfig, err = s.loadTLSConfig()
-		if err != nil {
-			return s.log.StructuredError("failed to load TLS config", "error", err)
-		}
-	} else {
-		s.log.Warn("TLS is disabled - this should only be used for testing!")
+	s.log.Info("loading TLS configuration",
+		"tls_cert", s.Config.TLSCertPath,
+		"tls_key", s.Config.TLSKeyPath,
+	)
+	tlsConfig, err := s.loadTLSConfig()
+	if err != nil {
+		return s.log.StructuredError("failed to load TLS config", "error", err)
 	}
 
 	// Create HTTP server mux
@@ -77,13 +69,8 @@ func (s *Server) Run(ctx context.Context) *logging.Error {
 
 	// Start the server
 	go func() {
-		if s.Config.TLSDisable {
-			s.log.Info("webhook server listening", "port", s.Config.Port, "protocol", "HTTP", "tls", "disabled")
-			serverErrors <- s.httpServer.ListenAndServe()
-		} else {
-			s.log.Info("webhook server listening", "port", s.Config.Port, "protocol", "HTTPS")
-			serverErrors <- s.httpServer.ListenAndServeTLS("", "")
-		}
+		s.log.Info("webhook server listening", "port", s.Config.Port, "protocol", "HTTPS")
+		serverErrors <- s.httpServer.ListenAndServeTLS("", "")
 	}()
 
 	// Block until we receive a signal or an error

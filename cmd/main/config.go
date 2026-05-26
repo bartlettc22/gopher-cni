@@ -19,7 +19,7 @@ type Config struct {
 // LoadConfig parses command-line flags and environment variables to build configuration
 func LoadConfig() *Config {
 	if len(os.Args) < 2 {
-		logging.Fatal(fmt.Errorf("subcommand is required, can be one of: daemon, init-validation, or sidecar"))
+		logging.Fatal(fmt.Errorf("subcommand is required, can be one of: daemon, init-validation, write-coredns-config"))
 	} else if len(os.Args) > 2 {
 		logging.Fatal(fmt.Errorf("exactly 1 argument (subcommand) is required, have %d", len(os.Args)-1))
 	}

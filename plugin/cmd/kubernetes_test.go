@@ -56,6 +56,10 @@ func (m *mockClient) FetchSecretKey(ctx context.Context, namespace, name, key st
 	return val, nil
 }
 
+func (m *mockClient) GetServiceClusterIP(_ context.Context, namespace, name string) (string, error) {
+	return "10.96.0.10", nil
+}
+
 func (m *mockClient) addPod(namespace, name string, labels, annotations map[string]string) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

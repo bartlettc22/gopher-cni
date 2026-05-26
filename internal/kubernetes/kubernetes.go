@@ -16,6 +16,7 @@ import (
 type Client interface {
 	GetPod(ctx context.Context, namespace, name string) (*v1.Pod, error)
 	FetchSecretKey(ctx context.Context, namespace, name, key string) ([]byte, error)
+	GetServiceClusterIP(ctx context.Context, namespace, name string) (string, error)
 }
 
 type KubeClient struct {
@@ -35,6 +36,17 @@ func (k KubeClient) FetchSecretKey(ctx context.Context, namespace, name, key str
 		return val, nil
 	}
 	return nil, fmt.Errorf("kubernetes secret %s/%s does not contain data in key %q", namespace, name, key)
+}
+
+func (k KubeClient) GetServiceClusterIP(ctx context.Context, namespace, name string) (string, error) {
+	svc, err := k.client.CoreV1().Services(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+		return "", fmt.Errorf("service %s/%s has no ClusterIP", namespace, name)
+	}
+	return svc.Spec.ClusterIP, nil
 }
 
 // NewClientFromConfigFile returns a Kubernetes client from the given kubeconfig file

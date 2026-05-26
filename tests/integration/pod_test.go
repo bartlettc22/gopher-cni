@@ -55,11 +55,22 @@ func (s *IntegrationSuite) TestPodBasicStartup() {
 	fmt.Printf("Pod test-pod is Ready in namespace %q\n", podTestNamespace)
 }
 
+// minimalNoopWGConf is a WireGuard config with no DNS entry, so the mutating
+// webhook can fetch and parse it without injecting any DNS patches.
+const minimalNoopWGConf = `[Interface]
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+Address = 10.2.0.2/32
+
+[Peer]
+PublicKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+AllowedIPs = 0.0.0.0/0
+Endpoint = 1.2.3.4:51820
+`
+
 // TestValidatingWebhookRejectsInvalidPod verifies that the validating webhook
-// rejects a pod that passes the mutating webhook but has an invalid cni-mode.
-// The pod carries a wgconf-secret annotation and dns-tunneled=false so the
-// mutating webhook completes without needing a real secret, then the validating
-// webhook fires and denies the invalid cni-mode value.
+// rejects a pod with an invalid cni-mode. A real WireGuard secret (no DNS) is
+// created so the mutating webhook can complete, then the validating webhook fires
+// and denies the invalid cni-mode value.
 func (s *IntegrationSuite) TestValidatingWebhookRejectsInvalidPod() {
 	ctx := context.Background()
 
@@ -74,13 +85,14 @@ func (s *IntegrationSuite) TestValidatingWebhookRejectsInvalidPod() {
 	_, err := kubectl(ctx, "create", "namespace", cniPodTestNamespace)
 	s.Require().NoError(err, "create namespace %s", cniPodTestNamespace)
 
+	s.Require().NoError(createWGSecret(ctx, cniPodTestNamespace, wgSecretName, minimalNoopWGConf), "create wg secret")
+
 	fmt.Printf("Deploying pod with invalid cni-mode in namespace %q (expecting validating webhook rejection)...\n", cniPodTestNamespace)
 
-	overrides := `{"metadata":{"annotations":{` +
-		`"gopher.cni/wgconf-secret":"fake-secret",` +
-		`"gopher.cni/dns-tunneled":"false",` +
-		`"gopher.cni/cni-mode":"invalid-mode"` +
-		`}}}`
+	overrides := fmt.Sprintf(`{"metadata":{"annotations":{`+
+		`"gopher.cni/wgconf-secret":%q,`+
+		`"gopher.cni/cni-mode":"invalid-mode"`+
+		`}}}`, wgSecretName)
 
 	errOutput, runErr := kubectlWithStderr(ctx,
 		"run", "test-pod",

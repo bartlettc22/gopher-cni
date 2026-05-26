@@ -22,12 +22,6 @@ const (
 	// AnnotationCNIMode is the annotation key for the CNI operation mode
 	AnnotationCNIMode = LabelPrefix + "cni-mode"
 
-	// AnnotationDNSTunneled is the annotation key for DNS tunneling configuration
-	AnnotationDNSTunneled = LabelPrefix + "dns-tunneled"
-
-	// AnnotationNATPMP is the annotation key for NAT-PMP port forwarding
-	AnnotationNATPMP = LabelPrefix + "nat-pmp"
-
 	// AnnotationSplitTunnelCIDRs is the annotation key for a comma-separated list of CIDRs
 	// that should be routed via the default interface instead of the WireGuard tunnel.
 	AnnotationSplitTunnelCIDRs = LabelPrefix + "split-tunnel-cidrs"
@@ -35,6 +29,12 @@ const (
 	// AnnotationSplitTunnelOverlap permits split-tunnel CIDRs that are less specific than
 	// a WireGuard address or DNS server but still overlap. Set to "allow" to enable.
 	AnnotationSplitTunnelOverlap = LabelPrefix + "split-tunnel-overlap"
+
+	// AnnotationSplitTunnelDNSZones is a comma-separated list of DNS zone suffixes that
+	// should be resolved via the cluster DNS server instead of the WireGuard tunnel DNS.
+	// Requires a CoreDNS sidecar to be injected; the cluster DNS IP is discovered from
+	// the kube-dns service in kube-system at admission time.
+	AnnotationSplitTunnelDNSZones = LabelPrefix + "split-tunnel-dns-zones"
 
 	// CNIModePodOrigin is the pod-origin CNI mode
 	CNIModePodOrigin = "pod-origin"

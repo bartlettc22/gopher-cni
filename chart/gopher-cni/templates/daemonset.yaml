@@ -55,10 +55,10 @@ spec:
           value: {{ .Values.webhook.injectedImage | default $image | quote }}
         - name: WEBHOOK_PORT
           value: {{ .Values.webhook.port | quote }}
-        - name: WEBHOOK_TLS_DISABLE
-          value: {{ not .Values.webhook.tls.enabled | quote }}
         - name: WEBHOOK_TLS_CERT_PATH
           value: {{ .Values.webhook.tls.certPath }}
+        - name: WEBHOOK_TLS_KEY_PATH
+          value: {{ .Values.webhook.tls.keyPath }}
         ports:
         - name: webhook
           containerPort: {{ .Values.webhook.port }}
@@ -78,11 +78,9 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        {{- if .Values.webhook.tls.enabled }}
         - name: certs
           mountPath: /etc/webhook/certs
           readOnly: true
-        {{- end }}
         - name: cni-bin
           mountPath: {{ printf "%s/%s" .Values.cni.containerHostPathPrefix ( trimPrefix "/" .Values.cni.host.binPath )  }}
         - name: cni-config
@@ -92,12 +90,10 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
-      {{- if .Values.webhook.tls.enabled }}
       - name: certs
         secret:
           secretName: {{ include "gopher-cni.certificateSecretName" . }}
           defaultMode: 0640
-      {{- end }}
       - name: cni-bin
         hostPath:
           path: {{ .Values.cni.host.binPath }}
