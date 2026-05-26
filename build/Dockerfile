@@ -25,9 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 # Installer image — runs as root on each node to install the CNI plugin binary
 # and config onto the host filesystem via hostPath volume mounts.
-FROM alpine:3.23.4 AS installer
-
-RUN apk add --no-cache ca-certificates
+FROM scratch AS installer
 
 ENV CNI_BIN_SOURCE_DIR=/cni/gopher-cni
 
@@ -38,9 +36,7 @@ ENTRYPOINT ["/gopher-installer"]
 
 # Webhook image — runs as non-root; serves the mutating/validating admission
 # webhook and does not require access to the host filesystem.
-FROM alpine:3.23.4 AS webhook
-
-RUN apk add --no-cache ca-certificates
+FROM scratch AS webhook
 
 COPY --from=build /gopher-webhook /gopher-webhook
 
@@ -50,9 +46,7 @@ ENTRYPOINT ["/gopher-webhook"]
 
 # Sidecar image — injected into user pods; runs init-validation, write-coredns-config,
 # and future subcommands (e.g. nat-pmp). No host filesystem access required.
-FROM alpine:3.23.4 AS sidecar
-
-RUN apk add --no-cache ca-certificates
+FROM scratch AS sidecar
 
 COPY --from=build /gopher-sidecar /gopher-sidecar
 

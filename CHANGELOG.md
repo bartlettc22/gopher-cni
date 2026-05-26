@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - New `gopher-cni-sidecar` image consolidates all injected pod containers (`init-validation`, `write-coredns-config`, and future subcommands); sourced from `sidecar.image` in values
 - `ClusterRole`: added `services` to the `get`/`list` rules
 - CoreDNS image version pinned to `docker.io/coredns/coredns:1.13.1` in `webhook.config.coreDNSImage`
+- All three images (`installer`, `webhook`, `sidecar`) now use `scratch` as the base — static binaries with no OS layer
 
 ## [0.8.0]
 
