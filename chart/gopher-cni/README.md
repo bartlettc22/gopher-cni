@@ -1,6 +1,6 @@
 # Gopher CNI Helm Chart
 
-A Helm chart for deploying Gopher CNI to Kubernetes. Gopher CNI is a CNI plugin that tunnels pod traffic through WireGuard VPN with automatic network validation. This chart deploys the admission webhook component for automatic injection of the validation init container.
+A Helm chart for deploying Gopher CNI to Kubernetes. Gopher CNI is a CNI plugin that tunnels pod traffic through WireGuard VPN with automatic network validation. This chart deploys a DaemonSet that installs the CNI plugin on every node and runs the admission webhook, which automatically injects a WireGuard validator init container, configures pod DNS through the tunnel, and optionally sets up split-DNS via a CoreDNS sidecar.
 
 ## Prerequisites
 
@@ -53,44 +53,101 @@ helm install gopher-cni ./chart/gopher-cni \
 ## Uninstalling the Chart
 
 ```bash
-helm uninstall gopher-cni --namespace gopher-cni-system
+helm uninstall gopher-cni --namespace gopher-cni
 ```
 
 ## Configuration
 
 The following table lists the configurable parameters of the Gopher CNI chart and their default values.
 
+### Image
+
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `image.repository` | Image repository | `gopher-cni` |
+| `image.repository` | Image repository | `ghcr.io/bartlettc22/gopher-cni` |
 | `image.tag` | Image tag | `""` (uses chart appVersion) |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
+| `imagePullSecrets` | Image pull secrets | `[]` |
+| `nameOverride` | Override chart name | `""` |
+| `fullnameOverride` | Override fully-qualified app name | `""` |
+
+### Logging
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `logLevel` | Log level (`debug`, `info`, `warn`, `error`) | `info` |
+| `logFormat` | Log format (`json`, `text`) | `json` |
+
+### CNI
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `cni.host.cniNetDir` | Host path for CNI config files | `/etc/cni/net.d` |
+| `cni.host.binPath` | Host path for CNI binaries | `/opt/cni/bin` |
+| `cni.host.udsSocketDir` | Host path for the UDS log socket directory | `/var/run/gopher-cni` |
+| `cni.containerHostPathPrefix` | Container mount prefix for host paths | `/host` |
+
+### Webhook
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
 | `webhook.port` | Webhook server port | `8443` |
-| `webhook.injectedImage` | Image for injected containers | `gopher-cni:latest` |
-| `webhook.cni.binPath` | Host path for CNI binaries | `/opt/cni/bin` |
-| `webhook.cni.configPath` | Host path for CNI config | `/etc/cni/net.d` |
-| `webhook.failurePolicy` | Webhook failure policy | `Fail` |
-| `webhook.timeoutSeconds` | Webhook timeout | `10` |
-| `certificate.enabled` | Enable cert-manager certificates | `true` |
-| `certificate.duration` | Certificate duration | `2160h` (90 days) |
-| `certificate.renewBefore` | Renew before expiry | `360h` (15 days) |
-| `certificate.issuer.create` | Create self-signed issuer and CA | `true` |
-| `certificate.issuer.name` | Issuer name (if not creating) | `""` |
-| `certificate.issuer.kind` | Issuer kind | `Issuer` |
-| `serviceAccount.create` | Create service account | `true` |
-| `serviceAccount.annotations` | Service account annotations | `{}` |
-| `serviceAccount.name` | Service account name | `""` |
+| `webhook.injectedImage` | Image used for injected init/sidecar containers | `""` (uses daemonset image) |
+| `webhook.tls.certPath` | Path to TLS certificate inside the container | `/etc/webhook/certs/tls.crt` |
+| `webhook.tls.keyPath` | Path to TLS private key inside the container | `/etc/webhook/certs/tls.key` |
+| `webhook.failurePolicy` | Webhook failure policy (`Fail` or `Ignore`) | `Fail` |
+| `webhook.timeoutSeconds` | Webhook timeout in seconds | `10` |
+
+### Certificate (cert-manager)
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `certificate.enabled` | Create a cert-manager Certificate resource | `true` |
+| `certificate.duration` | Certificate validity duration | `2160h` (90 days) |
+| `certificate.renewBefore` | Renew certificate before expiry | `360h` (15 days) |
+| `certificate.issuer.create` | Create a self-signed Issuer and CA | `true` |
+| `certificate.issuer.name` | Name of an existing Issuer to use (requires `issuer.create: false`) | `""` |
+| `certificate.issuer.kind` | Issuer kind (`Issuer` or `ClusterIssuer`) | `Issuer` |
+
+### Service Account
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `serviceAccount.annotations` | Annotations for the service account | `{}` |
+| `serviceAccount.name` | Service account name (auto-generated if empty) | `""` |
+
+### Pod
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `podAnnotations` | Annotations added to each pod | `{}` |
+| `podLabels` | Labels added to each pod | `{}` |
+| `podSecurityContext` | Pod-level security context | `{}` |
+| `securityContext` | Container-level security context | `{}` |
+
+### Service
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `service.type` | Kubernetes service type | `ClusterIP` |
+| `service.port` | Service port | `443` |
+| `service.targetPort` | Target port on the pod | `8443` |
+
+### Resources and Scheduling
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
 | `resources.limits.cpu` | CPU limit | `500m` |
 | `resources.limits.memory` | Memory limit | `256Mi` |
 | `resources.requests.cpu` | CPU request | `100m` |
 | `resources.requests.memory` | Memory request | `128Mi` |
+| `livenessProbe` | Liveness probe configuration | HTTPS GET `/health` |
+| `readinessProbe` | Readiness probe configuration | HTTPS GET `/ready` |
 | `nodeSelector` | Node selector | `{}` |
-| `tolerations` | Tolerations | `[]` |
+| `tolerations` | Tolerations (default runs on all nodes including control plane) | `[{operator: Exists, effect: NoSchedule}]` |
 | `affinity` | Affinity rules | `{}` |
 
 ### Example: Custom Values
-
-Create a `values.yaml` file:
 
 ```yaml
 image:
@@ -124,16 +181,16 @@ Install with custom values:
 
 ```bash
 helm install gopher-cni ./chart/gopher-cni \
-  --namespace gopher-cni-system \
+  --namespace gopher-cni \
   --create-namespace \
   --values values.yaml
 ```
 
 ## Usage
 
-### Enable Automatic Validation for Pods
+### Enable Automatic Injection for Pods
 
-Pods using the Gopher CNI plugin can opt-in to automatic validation by adding the label:
+Pods opt in to gopher-cni by adding the label and a reference to a WireGuard config secret:
 
 ```yaml
 apiVersion: v1
@@ -141,7 +198,9 @@ kind: Pod
 metadata:
   name: my-app
   labels:
-    gopher.cni/enabled: "true"             # Enable automatic validation
+    gopher.cni/enabled: "true"
+  annotations:
+    gopher.cni/wgconf-secret: "my-wg-secret"   # Secret containing wg0.conf
 spec:
   containers:
   - name: app
@@ -149,32 +208,41 @@ spec:
 ```
 
 The admission webhook will:
-- Inject an init container to validate the WireGuard tunnel and CNI configuration before the main container starts
+- Inject a `gopher-cni-validator` init container that validates the WireGuard tunnel and CNI configuration before the main container starts.
+- If the WireGuard config contains a `DNS =` entry, set `dnsPolicy: None` and route all pod DNS through the tunnel resolver.
 
-Note: This chart deploys the daemon mode which installs the CNI plugin and runs the webhook server.
+### Split DNS
 
-### Disable Webhook for Namespace
+To route only specific DNS zones through the cluster DNS server (and everything else through the WireGuard tunnel resolver), add the `gopher.cni/split-tunnel-dns-zones` annotation:
 
-```bash
-kubectl label namespace my-namespace gopher-cni.io/webhook=disabled
+```yaml
+annotations:
+  gopher.cni/wgconf-secret: "my-wg-secret"
+  gopher.cni/split-tunnel-dns-zones: "cluster.local, corp.internal"
 ```
+
+When this annotation is set the webhook will:
+- Inject a CoreDNS sidecar that forwards the listed zones to the cluster DNS server (`kube-dns`) and all other queries to the WireGuard tunnel resolver.
+- Set `dnsPolicy: None` and point the pod's nameservers at `127.0.0.1` (the sidecar).
+
+> **Note:** Split DNS requires the WireGuard config to include a `DNS =` entry for the catch-all forwarding to work. Without it, only the listed zones resolve; all other DNS will fail.
+
+> **Note:** If using split DNS, you almost certainly also need `gopher.cni/split-tunnel-cidrs` to include your cluster CIDR so that DNS traffic can reach the cluster DNS server through the tunnel.
 
 ## Verification
 
-Check DaemonSet and pod status:
-
 ```bash
 # Check certificate
-kubectl get certificate -n gopher-cni-system
+kubectl get certificate -n gopher-cni
 
 # Check DaemonSet
-kubectl get daemonset -n gopher-cni-system
+kubectl get daemonset -n gopher-cni
 
 # Check pods (should be one per node)
-kubectl get pods -n gopher-cni-system -o wide
+kubectl get pods -n gopher-cni -o wide
 
 # View logs from a specific node
-kubectl logs -n gopher-cni-system -l app.kubernetes.io/name=gopher-cni --tail=50
+kubectl logs -n gopher-cni -l app.kubernetes.io/name=gopher-cni --tail=50
 
 # Check webhook configurations
 kubectl get mutatingwebhookconfiguration
@@ -187,7 +255,7 @@ kubectl get validatingwebhookconfiguration
 
 ```bash
 # Check certificate status
-kubectl describe certificate -n gopher-cni-system
+kubectl describe certificate -n gopher-cni
 
 # Check cert-manager logs
 kubectl logs -n cert-manager deployment/cert-manager
@@ -206,11 +274,11 @@ kubectl get mutatingwebhookconfiguration <name> -o yaml | grep caBundle
 ### Webhook Not Mutating Pods
 
 ```bash
-# Verify label is present
-kubectl get pod <pod-name> -o yaml | grep gopher.cni/enabled
+# Verify label and annotation are present
+kubectl get pod <pod-name> -o yaml | grep -A5 'labels:\|annotations:'
 
 # Check webhook logs
-kubectl logs -n gopher-cni-system -l app.kubernetes.io/name=gopher-cni
+kubectl logs -n gopher-cni -l app.kubernetes.io/name=gopher-cni
 
 # Test with example pod
 kubectl run test-pod --image=nginx --labels="gopher.cni/enabled=true"
@@ -221,7 +289,7 @@ kubectl describe pod test-pod
 
 ```bash
 helm upgrade gopher-cni ./chart/gopher-cni \
-  --namespace gopher-cni-system
+  --namespace gopher-cni
 ```
 
 ## Development
@@ -236,14 +304,14 @@ Render templates locally:
 
 ```bash
 helm template gopher-cni ./chart/gopher-cni \
-  --namespace gopher-cni-system
+  --namespace gopher-cni
 ```
 
 Dry run install:
 
 ```bash
 helm install gopher-cni ./chart/gopher-cni \
-  --namespace gopher-cni-system \
+  --namespace gopher-cni \
   --create-namespace \
   --dry-run --debug
 ```

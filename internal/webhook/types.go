@@ -1,20 +1,23 @@
 package webhook
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/bartlettc22/gopher-cni/internal/cni"
 	"github.com/bartlettc22/gopher-cni/internal/kubernetes"
+	"github.com/bartlettc22/gopher-cni/internal/wireguard"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	// InitContainerName is the name of the injected init container
+	// InitContainerName is the name of the injected validator init container
 	InitContainerName = "gopher-cni-validator"
 
-<<<<<<< Updated upstream
 	// SidecarContainerName is the name of the injected sidecar container
 	SidecarContainerName = "gopher-cni-sidecar"
-=======
+
 	// CoreDNSConfigContainerName is the name of the init container that writes the CoreDNS Corefile
 	CoreDNSConfigContainerName = "gopher-cni-coredns-config"
 
@@ -23,23 +26,22 @@ const (
 
 	// CoreDNSVolumeName is the emptyDir volume shared between the CoreDNS config init container and sidecar
 	CoreDNSVolumeName = "gopher-cni-coredns"
->>>>>>> Stashed changes
 )
 
 // PatchOperation represents a JSON patch operation
 type PatchOperation struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value any `json:"value,omitempty"`
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	Value any    `json:"value,omitempty"`
 }
 
 // WebhookConfig holds the webhook configuration
 type WebhookConfig struct {
-	// Image is the container image for init and sidecar containers
+	// Image is the container image for injected gopher-cni containers
 	Image string
 
-	// TLSDisable disables TLS for the webhook server
-	TLSDisable bool
+	// CoreDNSImage is the container image for the injected CoreDNS sidecar
+	CoreDNSImage string
 
 	// TLSCertPath is the path to the TLS certificate
 	TLSCertPath string
@@ -50,7 +52,7 @@ type WebhookConfig struct {
 	// Port is the webhook server port
 	Port int
 
-	// KubeClient is the Kubernetes client for reading secrets
+	// KubeClient is the Kubernetes client for reading secrets and services
 	KubeClient kubernetes.Client
 }
 
@@ -77,15 +79,58 @@ func (c *WebhookConfig) createInitContainer() corev1.Container {
 	}
 }
 
-// createSidecarContainer creates the NAT-PMP sidecar container
-func (c *WebhookConfig) createSidecarContainer() corev1.Container {
+// createCoreDNSConfigInitContainer creates an init container that writes the CoreDNS Corefile
+// to a shared emptyDir volume at /etc/coredns/Corefile. The Corefile content is passed via
+// the COREFILE environment variable so it can be generated per-pod at admission time.
+func (c *WebhookConfig) createCoreDNSConfigInitContainer(corefile string) corev1.Container {
 	return corev1.Container{
-		Name:  SidecarContainerName,
-		Image: c.Image,
-		Args: []string{
-			"sidecar",
-		},
+		Name:    CoreDNSConfigContainerName,
+		Image:   c.Image,
+		Command: []string{"/gopher"},
+		Args:    []string{"write-coredns-config"},
+		Env: []corev1.EnvVar{{
+			Name:  "COREFILE",
+			Value: corefile,
+		}},
+		VolumeMounts: []corev1.VolumeMount{{
+			Name:      CoreDNSVolumeName,
+			MountPath: "/etc/coredns",
+		}},
 	}
+}
+
+// createCoreDNSSidecarContainer creates the CoreDNS sidecar container for split-DNS.
+func (c *WebhookConfig) createCoreDNSSidecarContainer() corev1.Container {
+	return corev1.Container{
+		Name:  CoreDNSContainerName,
+		Image: c.CoreDNSImage,
+		Args:  []string{"-conf", "/etc/coredns/Corefile"},
+		Ports: []corev1.ContainerPort{{
+			ContainerPort: 53,
+			Protocol:      corev1.ProtocolUDP,
+		}},
+		VolumeMounts: []corev1.VolumeMount{{
+			Name:      CoreDNSVolumeName,
+			MountPath: "/etc/coredns",
+			ReadOnly:  true,
+		}},
+	}
+}
+
+// fetchWGConfig retrieves and parses the WireGuard config from the named secret.
+func (c *WebhookConfig) fetchWGConfig(ctx context.Context, namespace, secretName string) (*wireguard.Config, error) {
+	if c.KubeClient == nil {
+		return nil, fmt.Errorf("kubernetes client not configured")
+	}
+	data, err := c.KubeClient.FetchSecretKey(ctx, namespace, secretName, cni.SecretKeyWGConf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get wireguard config secret: %w", err)
+	}
+	cfg, err := wireguard.ParseConfig(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse wireguard config: %w", err)
+	}
+	return cfg, nil
 }
 
 // hasContainer checks if a container with the given name exists

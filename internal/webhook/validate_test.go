@@ -376,72 +376,19 @@ func TestValidateHandler_AnnotationValidation(t *testing.T) {
 			expectedAllow: true,
 		},
 		{
-			name: "invalid dns-tunneled value",
-			annotations: map[string]string{
-				cni.AnnotationWGConfSecret: "my-secret",
-				cni.AnnotationDNSTunneled:  "yes",
-			},
-			expectedAllow: false,
-			errorContains: "must be 'true' or 'false'",
-		},
-		{
-			name: "valid dns-tunneled true",
-			annotations: map[string]string{
-				cni.AnnotationWGConfSecret: "my-secret",
-				cni.AnnotationDNSTunneled:  "true",
-			},
-			expectedAllow: true,
-		},
-		{
-			name: "valid dns-tunneled false",
-			annotations: map[string]string{
-				cni.AnnotationWGConfSecret: "my-secret",
-				cni.AnnotationDNSTunneled:  "false",
-			},
-			expectedAllow: true,
-		},
-		{
-			name: "invalid nat-pmp value",
-			annotations: map[string]string{
-				cni.AnnotationWGConfSecret: "my-secret",
-				cni.AnnotationNATPMP:       "1",
-			},
-			expectedAllow: false,
-			errorContains: "must be 'true' or 'false'",
-		},
-		{
-			name: "valid nat-pmp true",
-			annotations: map[string]string{
-				cni.AnnotationWGConfSecret: "my-secret",
-				cni.AnnotationNATPMP:       "true",
-			},
-			expectedAllow: true,
-		},
-		{
-			name: "valid nat-pmp false",
-			annotations: map[string]string{
-				cni.AnnotationWGConfSecret: "my-secret",
-				cni.AnnotationNATPMP:       "false",
-			},
-			expectedAllow: true,
-		},
-		{
 			name: "all annotations valid",
 			annotations: map[string]string{
 				cni.AnnotationWGConfSecret: "my-secret",
 				cni.AnnotationCNIMode:      "host-origin",
-				cni.AnnotationDNSTunneled:  "true",
-				cni.AnnotationNATPMP:       "true",
 			},
 			expectedAllow: true,
 		},
 		{
 			name: "multiple invalid annotations",
 			annotations: map[string]string{
-				cni.AnnotationWGConfSecret: "my-secret",
-				cni.AnnotationCNIMode:      "invalid-mode",
-				cni.AnnotationDNSTunneled:  "yes",
-				cni.AnnotationNATPMP:       "1",
+				cni.AnnotationWGConfSecret:     "my-secret",
+				cni.AnnotationCNIMode:          "invalid-mode",
+				cni.AnnotationSplitTunnelCIDRs: "not-a-cidr",
 			},
 			expectedAllow: false,
 			errorContains: "invalid value",
