@@ -62,6 +62,11 @@ func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgA
 			return err
 		}
 
+		// 6. Policy route: replies to eth0-addressed traffic go back out eth0, not wg0.
+		if err := addEth0ReturnRoute(origDefault); err != nil {
+			return err
+		}
+
 		return addSplitTunnelRoutes(origDefault, splitTunnelCIDRs)
 	})
 }
@@ -120,6 +125,11 @@ func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config
 			return err
 		}
 		if err := addProtectedRoutes(wgLink, protectedNets); err != nil {
+			return err
+		}
+
+		// 5. Policy route: replies to eth0-addressed traffic go back out eth0, not wg0.
+		if err := addEth0ReturnRoute(defaultRoute); err != nil {
 			return err
 		}
 
@@ -217,4 +227,51 @@ func defaultRoute() (*netlink.Route, error) {
 		}
 	}
 	return nil, fmt.Errorf("no default route found")
+}
+
+const eth0ReturnTable = 100
+
+// addEth0ReturnRoute installs source-based policy routing to fix asymmetric routing
+// after the default route is replaced by wg0. Without this, replies to traffic that
+// arrived on eth0 are sent back out wg0, which the remote drops. We mirror the
+// original default route into a private table and add an ip rule per eth0 address so
+// those replies are looked up in that table and exit via eth0.
+func addEth0ReturnRoute(origDefault *netlink.Route) error {
+	eth0, err := netlink.LinkByIndex(origDefault.LinkIndex)
+	if err != nil {
+		return fmt.Errorf("failed to get eth0 link (index %d): %w", origDefault.LinkIndex, err)
+	}
+
+	addrs, err := netlink.AddrList(eth0, netlink.FAMILY_V4)
+	if err != nil {
+		return fmt.Errorf("failed to list eth0 addresses: %w", err)
+	}
+
+	// Preserve Gw and Scope from the original so the route is valid whether it
+	// used a gateway IP or was link-scoped (on-link).
+	_, defaultDst, _ := net.ParseCIDR("0.0.0.0/0")
+	if err := netlink.RouteAdd(&netlink.Route{
+		Table:     eth0ReturnTable,
+		LinkIndex: origDefault.LinkIndex,
+		Dst:       defaultDst,
+		Gw:        origDefault.Gw,
+		Scope:     origDefault.Scope,
+	}); err != nil {
+		return fmt.Errorf("failed to add eth0 return route to table %d: %w", eth0ReturnTable, err)
+	}
+
+	for _, addr := range addrs {
+		ip := addr.IP.To4()
+		if ip == nil {
+			continue
+		}
+		rule := netlink.NewRule()
+		rule.Table = eth0ReturnTable
+		rule.Src = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
+		if err := netlink.RuleAdd(rule); err != nil {
+			return fmt.Errorf("failed to add ip rule for eth0 address %s: %w", ip, err)
+		}
+	}
+
+	return nil
 }

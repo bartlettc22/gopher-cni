@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0]
+
+### Fixed
+- Incoming traffic on `eth0` was dropped when no split tunneling was configured. Replacing the default route with `wg0` caused asymmetric routing: replies to packets arriving on `eth0` were sent back out `wg0`, which the remote host rejected. Fixed by installing source-based policy routing — a private routing table mirrors the original `eth0` default route, and an `ip rule` per `eth0` address ensures replies are sent back out `eth0`.
+
 ## [0.9.0]
 
 ### Breaking Changes
