@@ -62,6 +62,22 @@ func setupWGViaHost(netNSName, wgIfaceName string, wgConfig *wgtypes.Config, wgA
 			return err
 		}
 
+		// 6. Install a policy route so that traffic arriving on eth0 is replied
+		// to via eth0, not wg0.
+		//
+		// Without this, replacing the default route with wg0 causes asymmetric
+		// routing: a packet arriving on eth0 (addressed to eth0's IP) triggers a
+		// reply that the main routing table sends out wg0, and the remote host
+		// drops or ignores it because it came from the wrong interface.
+		//
+		// The fix is source-based policy routing:
+		//   - Add the original eth0 default route to a private routing table.
+		//   - Add an "ip rule" for each eth0 address: packets sourced from that
+		//     IP use the private table, which sends them back out eth0.
+		if err := addEth0ReturnRoute(origDefault); err != nil {
+			return err
+		}
+
 		return addSplitTunnelRoutes(origDefault, splitTunnelCIDRs)
 	})
 }
@@ -120,6 +136,22 @@ func setupWGViaContainer(netNSName, wgIfaceName string, wgConfig *wgtypes.Config
 			return err
 		}
 		if err := addProtectedRoutes(wgLink, protectedNets); err != nil {
+			return err
+		}
+
+		// 5. Install a policy route so that traffic arriving on eth0 is replied
+		// to via eth0, not wg0.
+		//
+		// Without this, replacing the default route with wg0 causes asymmetric
+		// routing: a packet arriving on eth0 (addressed to eth0's IP) triggers a
+		// reply that the main routing table sends out wg0, and the remote host
+		// drops or ignores it because it came from the wrong interface.
+		//
+		// The fix is source-based policy routing:
+		//   - Add the original eth0 default route to a private routing table.
+		//   - Add an "ip rule" for each eth0 address: packets sourced from that
+		//     IP use the private table, which sends them back out eth0.
+		if err := addEth0ReturnRoute(defaultRoute); err != nil {
 			return err
 		}
 
@@ -217,4 +249,70 @@ func defaultRoute() (*netlink.Route, error) {
 		}
 	}
 	return nil, fmt.Errorf("no default route found")
+}
+
+// eth0ReturnTable is the routing table used for source-based policy routing to
+// send eth0-sourced replies back out eth0 after the default route is replaced
+// by the WireGuard interface.  Any value in the range 1–252 works; 100 is a
+// conventional choice for a first custom table.
+const eth0ReturnTable = 100
+
+// addEth0ReturnRoute installs source-based policy routing so that traffic
+// arriving on eth0 is answered via eth0, not the WireGuard interface.
+//
+// Problem: once replaceDefaultRoute points the default route at wg0, any reply
+// to a packet that arrived on eth0 (e.g. from the Kubernetes control plane or
+// another pod on the node) is sent back out wg0 instead of eth0.  The remote
+// drops it because it arrives from an unexpected interface/path.
+//
+// Fix: Linux policy routing lets us pick a routing table based on the source
+// address of the outgoing packet.  We:
+//  1. Add the original eth0 default route to a private table (eth0ReturnTable).
+//  2. For each IPv4 address on eth0, add an "ip rule" that says: packets
+//     sourced from this exact IP must use eth0ReturnTable.
+//
+// Result: replies to eth0-addressed traffic look up eth0ReturnTable and exit
+// via eth0; all other traffic continues to use the main table (wg0 default).
+func addEth0ReturnRoute(origDefault *netlink.Route) error {
+	// Resolve the eth0 link so we can list its addresses.
+	eth0, err := netlink.LinkByIndex(origDefault.LinkIndex)
+	if err != nil {
+		return fmt.Errorf("failed to get eth0 link (index %d): %w", origDefault.LinkIndex, err)
+	}
+
+	addrs, err := netlink.AddrList(eth0, netlink.FAMILY_V4)
+	if err != nil {
+		return fmt.Errorf("failed to list eth0 addresses: %w", err)
+	}
+
+	// Step 1: mirror the original default route into the private table.
+	// We preserve Gw and Scope from origDefault so the entry is valid whether
+	// the original used a gateway IP or was a link-scoped (on-link) route.
+	_, defaultDst, _ := net.ParseCIDR("0.0.0.0/0")
+	if err := netlink.RouteAdd(&netlink.Route{
+		Table:     eth0ReturnTable,
+		LinkIndex: origDefault.LinkIndex,
+		Dst:       defaultDst,
+		Gw:        origDefault.Gw,
+		Scope:     origDefault.Scope,
+	}); err != nil {
+		return fmt.Errorf("failed to add eth0 return route to table %d: %w", eth0ReturnTable, err)
+	}
+
+	// Step 2: for each eth0 address, add an ip rule that selects the private
+	// table when the outgoing packet is sourced from that address.
+	for _, addr := range addrs {
+		ip := addr.IP.To4()
+		if ip == nil {
+			continue // skip IPv6
+		}
+		rule := netlink.NewRule()
+		rule.Table = eth0ReturnTable
+		rule.Src = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
+		if err := netlink.RuleAdd(rule); err != nil {
+			return fmt.Errorf("failed to add ip rule for eth0 address %s: %w", ip, err)
+		}
+	}
+
+	return nil
 }
