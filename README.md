@@ -8,8 +8,9 @@ A Kubernetes CNI plugin that tunnels pod traffic through WireGuard VPN.
 
 - **WireGuard VPN Tunneling** - Routes pod traffic through WireGuard tunnels at the CNI layer, transparent to the application
 - **Two CNI Modes** - `pod-origin` (traffic exits via `eth0` as encrypted UDP) or `host-origin` (traffic bypasses the Kubernetes overlay entirely)
+- **Shared VPN Proxy** - `GopherProxy` CRD lets many pods share a single external VPN connection; the controller auto-provisions per-pod WireGuard configs and hot-reloads the peer list without restarts
 - **Split Tunneling** - Route specific CIDRs via the pod's original interface while everything else goes through WireGuard
-- **DNS Tunneling** - Automatically configures pods to use DNS servers from the WireGuard config
+- **Split DNS** - Resolve cluster-internal zones via `kube-dns` while all other DNS traffic goes through the VPN tunnel resolver
 - **Admission Webhooks** - Mutating webhook injects required containers; validating webhook catches misconfigured pods at admission time
 - **Label-Based Opt-In** - Pods must explicitly opt in via a label; no cluster-wide interception
 - **Multi-Architecture** - Images published for `linux/amd64` and `linux/arm64`
@@ -58,6 +59,12 @@ spec:
 
 > **Note**: `hostNetwork: true` is not compatible with Gopher CNI. The validating webhook will reject such pods.
 
+### Share a VPN Connection Across Multiple Pods
+
+Use a `GopherProxy` when you want many pods to egress through the same external VPN without distributing individual credentials to each one. Create the proxy resource and label your pods — the controller handles key generation and peer wiring automatically.
+
+See the [GopherProxy guide](docs/gopher-proxy.md) for the full walkthrough.
+
 ## How It Works
 
 When a pod with `gopher.cni/enabled: "true"` is scheduled:
@@ -76,9 +83,9 @@ All pod-level configuration is done via labels and annotations. See the [Configu
 |---|---|---|
 | `gopher.cni/wgconf-secret` | Name of the Kubernetes secret containing `wg.conf` | *(required)* |
 | `gopher.cni/cni-mode` | `pod-origin` or `host-origin` | `pod-origin` |
-| `gopher.cni/dns-tunneled` | Tunnel DNS via WireGuard using DNS servers from the config | `true` |
 | `gopher.cni/split-tunnel-cidrs` | Comma-separated CIDRs to route via the original interface | `""` |
 | `gopher.cni/split-tunnel-overlap` | Set to `allow` to permit split-tunnel CIDRs that overlap (but are less specific than) WireGuard addresses or DNS servers | `""` |
+| `gopher.cni/split-tunnel-dns-zones` | Comma-separated DNS zones to resolve via `kube-dns` instead of the VPN tunnel resolver | `""` |
 
 ### WireGuard Secret Format
 
@@ -127,12 +134,13 @@ Common issues:
 
 - **Pod rejected at admission** — check the rejection message; it will identify the specific annotation that failed validation
 - **WireGuard tunnel not established** — verify the secret exists in the pod's namespace and the `wg.conf` is valid
-- **DNS not resolving** — confirm the WireGuard config includes a `DNS =` line, or set `gopher.cni/dns-tunneled: "false"`
+- **DNS not resolving** — confirm the WireGuard config includes a `DNS =` line; if you also need to reach cluster-internal names, add `gopher.cni/split-tunnel-dns-zones: "cluster.local"` and pair it with `split-tunnel-cidrs` covering the service and pod CIDRs
 - **Certificate not ready** — check cert-manager logs and `kubectl describe certificate -n gopher-cni-system`
 
 ## Documentation
 
 - [Configuration Reference](docs/CONFIGURATION.md) — all labels, annotations, and WireGuard secret format
+- [GopherProxy](docs/gopher-proxy.md) — share a single VPN connection across multiple pods
 - [Helm Chart](chart/gopher-cni/README.md) — Helm values and installation options
 - [Developer Guide](docs/DEV.md) — building, testing, and running locally
 - [Changelog](CHANGELOG.md)

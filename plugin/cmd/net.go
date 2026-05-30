@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
+	"os/exec"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/vishvananda/netlink"
@@ -274,4 +276,82 @@ func addEth0ReturnRoute(origDefault *netlink.Route) error {
 	}
 
 	return nil
+}
+
+const (
+	ifaceInternal = "wg-internal"
+	ifaceVPN      = "wg-vpn"
+)
+
+// setupWGProxy configures a pod as a WireGuard proxy. Inside the pod's network namespace it:
+//  1. Enables ip_forward so traffic is routed between the two interfaces.
+//  2. Creates wg-internal — a WireGuard server for peer pods, loaded with the given peer list.
+//  3. Creates wg-vpn — a WireGuard client to the external VPN.
+//  4. Adds routes for every VPN AllowedIP via wg-vpn.
+//  5. Adds an iptables MASQUERADE rule so peer traffic exits via the proxy's VPN IP.
+func setupWGProxy(
+	netNSName string,
+	internalConfig *wgtypes.Config,
+	internalAddrs []*netlink.Addr,
+	vpnConfig *wgtypes.Config,
+	vpnAddrs []*netlink.Addr,
+	log *slog.Logger,
+) error {
+	containerNS, err := ns.GetNS(netNSName)
+	if err != nil {
+		return fmt.Errorf("failed to get container network namespace: %w", err)
+	}
+
+	return containerNS.Do(func(_ ns.NetNS) error {
+		// 1. Enable ip_forward in this network namespace.
+		if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0644); err != nil {
+			return fmt.Errorf("enabling ip_forward: %w", err)
+		}
+
+		// 2. Set up the internal WireGuard server interface.
+		internalLink := &netlink.Wireguard{LinkAttrs: netlink.LinkAttrs{Name: ifaceInternal}}
+		if err := setupWG(internalLink, ifaceInternal, internalConfig, internalAddrs); err != nil {
+			return fmt.Errorf("setting up %s: %w", ifaceInternal, err)
+		}
+		log.Debug("internal WireGuard interface up", "iface", ifaceInternal)
+
+		// 3. Set up the VPN WireGuard client interface.
+		vpnLink := &netlink.Wireguard{LinkAttrs: netlink.LinkAttrs{Name: ifaceVPN}}
+		if err := setupWG(vpnLink, ifaceVPN, vpnConfig, vpnAddrs); err != nil {
+			return fmt.Errorf("setting up %s: %w", ifaceVPN, err)
+		}
+		log.Debug("VPN WireGuard interface up", "iface", ifaceVPN)
+
+		// 4. Add a route for each VPN AllowedIP via wg-vpn.
+		for _, peer := range vpnConfig.Peers {
+			for _, allowed := range peer.AllowedIPs {
+				dst := allowed // avoid loop capture
+				if err := netlink.RouteAdd(&netlink.Route{
+					LinkIndex: vpnLink.Attrs().Index,
+					Dst:       &dst,
+				}); err != nil {
+					return fmt.Errorf("adding route %s via %s: %w", dst.String(), ifaceVPN, err)
+				}
+			}
+		}
+
+		// 5. Determine the internal subnet (the /N network, not the host address).
+		var internalSubnet *net.IPNet
+		if len(internalAddrs) > 0 {
+			_, internalSubnet, _ = net.ParseCIDR(internalAddrs[0].IPNet.String())
+		}
+
+		// 6. MASQUERADE traffic from the internal WG subnet leaving via wg-vpn so
+		//    the VPN server sees the proxy's VPN IP as the source, not the peer's IP.
+		if internalSubnet != nil {
+			if out, err := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
+				"-s", internalSubnet.String(), "-o", ifaceVPN, "-j", "MASQUERADE",
+			).CombinedOutput(); err != nil {
+				return fmt.Errorf("adding MASQUERADE rule: %w: %s", err, string(out))
+			}
+			log.Debug("MASQUERADE rule added", "src", internalSubnet, "out", ifaceVPN)
+		}
+
+		return nil
+	})
 }

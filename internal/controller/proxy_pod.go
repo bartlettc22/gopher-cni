@@ -2,29 +2,43 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	gopherv1alpha1 "github.com/bartlettc22/gopher-cni/api/v1alpha1"
+	gcnicni "github.com/bartlettc22/gopher-cni/internal/cni"
 )
 
 const (
-	labelProxyName = "gopher.cni/proxy-name"
-	labelComponent = "app.kubernetes.io/component"
+	labelProxyName       = "gopher.cni/proxy-name"
+	labelComponent       = "app.kubernetes.io/component"
+	annotationPeersHash  = "gopher.cni/peers-hash"
 )
 
-// reconcileProxyPod ensures the proxy pod exists. It is created once and not updated
-// (a delete+recreate is required to apply spec changes).
-func reconcileProxyPod(ctx context.Context, c client.Client, proxy *gopherv1alpha1.GopherProxy, image string) error {
-	pod := &corev1.Pod{}
-	err := c.Get(ctx, types.NamespacedName{Namespace: proxy.Namespace, Name: proxyPodName(proxy.Name)}, pod)
+// reconcileProxyPod ensures the proxy pod exists and is up to date with the current peer list.
+// If the peers hash has changed since the pod was created, the pod is deleted so the CNI
+// plugin recreates it with the fresh peer list on next scheduling.
+func reconcileProxyPod(ctx context.Context, c client.Client, proxy *gopherv1alpha1.GopherProxy, image string, peersConf []byte) error {
+	currentHash := peersHash(peersConf)
+	podName := proxyPodName(proxy.Name)
+
+	existing := &corev1.Pod{}
+	err := c.Get(ctx, types.NamespacedName{Namespace: proxy.Namespace, Name: podName}, existing)
 	if err == nil {
+		// Pod exists — restart it if the peer list has changed.
+		if existing.Annotations[annotationPeersHash] != currentHash {
+			if delErr := c.Delete(ctx, existing); delErr != nil && !apierrors.IsNotFound(delErr) {
+				return fmt.Errorf("deleting stale proxy pod: %w", delErr)
+			}
+		}
 		return nil
 	}
 	if !apierrors.IsNotFound(err) {
@@ -36,91 +50,44 @@ func reconcileProxyPod(ctx context.Context, c client.Client, proxy *gopherv1alph
 		proxyImage = image
 	}
 
-	listenPort := proxy.Spec.InternalListenPort
-	if listenPort == 0 {
-		listenPort = 51820
-	}
-
-	trueVal := true
-	pod = &corev1.Pod{
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      proxyPodName(proxy.Name),
+			Name:      podName,
 			Namespace: proxy.Namespace,
 			Labels: map[string]string{
 				labelProxyName: proxy.Name,
 				labelComponent: "gopher-proxy",
+				// gopher.cni/enabled is a label, not an annotation, so the webhook picks it up.
+				gcnicni.LabelEnabled: "true",
+			},
+			Annotations: map[string]string{
+				// CNI plugin annotations — drive proxy-mode network setup.
+				gcnicni.AnnotationCNIMode:                   gcnicni.CNIModeProxy,
+				gcnicni.AnnotationWGConfSecret:              proxy.Spec.VPNWGSecret,
+				gcnicni.AnnotationProxyInternalWGConfSecret: internalWGSecretName(proxy.Name),
+				gcnicni.AnnotationProxyPeersSecret:          peersSecretName(proxy.Name),
+				// Tracks the peer list version so we know when to restart.
+				annotationPeersHash: currentHash,
 			},
 		},
 		Spec: corev1.PodSpec{
-			// Sysctls require the pod security policy or a privileged context on the node.
-			// ip_forward is needed to route between the two WireGuard interfaces.
-			SecurityContext: &corev1.PodSecurityContext{
-				Sysctls: []corev1.Sysctl{
-					{Name: "net.ipv4.ip_forward", Value: "1"},
-				},
-			},
+			// No NET_ADMIN, no privileged flag, no sysctls — the CNI plugin (running as
+			// root on the node) handles all WireGuard and iptables setup.
 			Containers: []corev1.Container{
 				{
 					Name:  "proxy",
 					Image: proxyImage,
-					Env: []corev1.EnvVar{
-						{
-							Name:  "INTERNAL_LISTEN_PORT",
-							Value: fmt.Sprintf("%d", listenPort),
-						},
-						{
-							Name:  "INTERNAL_ADDRESS",
-							Value: proxy.Spec.InternalAddress,
-						},
+					// The proxy binary is a minimal health server; all networking is
+					// set up by the CNI plugin at pod-creation time.
+					Ports: []corev1.ContainerPort{
+						{Name: "health", ContainerPort: 8080, Protocol: corev1.ProtocolTCP},
 					},
-					SecurityContext: &corev1.SecurityContext{
-						Capabilities: &corev1.Capabilities{
-							Add: []corev1.Capability{"NET_ADMIN"},
-						},
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "internal-wg",
-							MountPath: "/etc/gopher-proxy/internal-wg",
-							ReadOnly:  true,
-						},
-						{
-							Name:      "vpn-wg",
-							MountPath: "/etc/gopher-proxy/vpn-wg",
-							ReadOnly:  true,
-						},
-						{
-							Name:      "peers",
-							MountPath: "/etc/gopher-proxy/peers",
-							ReadOnly:  true,
-						},
-					},
-				},
-			},
-			Volumes: []corev1.Volume{
-				{
-					Name: "internal-wg",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: internalWGSecretName(proxy.Name),
-						},
-					},
-				},
-				{
-					Name: "vpn-wg",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: proxy.Spec.VPNWGSecret,
-						},
-					},
-				},
-				{
-					Name: "peers",
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: peersSecretName(proxy.Name),
-							// defaultMode keeps the file readable; the proxy binary watches for inotify events.
-							Optional: &trueVal,
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/healthz",
+								Port: intstr.FromInt32(8080),
+							},
 						},
 					},
 				},
@@ -133,3 +100,11 @@ func reconcileProxyPod(ctx context.Context, c client.Client, proxy *gopherv1alph
 	}
 	return c.Create(ctx, pod)
 }
+
+// peersHash returns a short hex digest of the peers config content, used to
+// detect when the pod needs to be restarted to pick up peer changes.
+func peersHash(peersConf []byte) string {
+	sum := sha256.Sum256(peersConf)
+	return fmt.Sprintf("%x", sum[:8])
+}
+

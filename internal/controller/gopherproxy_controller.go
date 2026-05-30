@@ -85,26 +85,27 @@ func (r *GopherProxyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, r.failStatus(ctx, proxy, fmt.Errorf("reconciling internal WG secret: %w", err))
 	}
 
-	// Phase 2: peers Secret (empty placeholder; populated by peer reconciliation below)
+	// Phase 2: peers Secret (created empty; populated by peer reconciliation below)
 	if err := reconcilePeersSecret(ctx, r.Client, proxy); err != nil {
 		return ctrl.Result{}, r.failStatus(ctx, proxy, fmt.Errorf("reconciling peers secret: %w", err))
 	}
 
-	// Phase 3: proxy pod
-	if err := reconcileProxyPod(ctx, r.Client, proxy, r.ProxyImage); err != nil {
-		return ctrl.Result{}, r.failStatus(ctx, proxy, fmt.Errorf("reconciling proxy pod: %w", err))
-	}
-
-	// Phase 4: ClusterIP service
+	// Phase 3: ClusterIP service (created before the pod so the CNI plugin can resolve it)
 	svcName := proxySvcName(proxy.Name)
 	if err := reconcileService(ctx, r.Client, proxy); err != nil {
 		return ctrl.Result{}, r.failStatus(ctx, proxy, fmt.Errorf("reconciling proxy service: %w", err))
 	}
 
-	// Phase 5: peer configs
+	// Phase 4: peer configs — must run before the pod so the CNI plugin sees a full peer list.
 	if err := reconcilePeers(ctx, r.Client, proxy, publicKey, svcName); err != nil {
-		// Peer reconciliation failures are logged but don't block the proxy from running.
 		logger.Error(err, "reconciling peers")
+	}
+
+	// Phase 5: proxy pod — created (or restarted) after peers are written so the CNI
+	// plugin picks up the full peer list at pod-creation time.
+	peersConf := currentPeersConf(ctx, r.Client, proxy)
+	if err := reconcileProxyPod(ctx, r.Client, proxy, r.ProxyImage, peersConf); err != nil {
+		return ctrl.Result{}, r.failStatus(ctx, proxy, fmt.Errorf("reconciling proxy pod: %w", err))
 	}
 
 	// Derive phase from proxy pod status.

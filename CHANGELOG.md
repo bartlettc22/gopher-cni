@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0]
+
+### Added
+- **GopherProxy** — new `GopherProxy` CRD and controller that creates a WireGuard proxy pod, enabling multiple app pods to share a single external VPN connection. The controller auto-generates per-pod WireGuard client config Secrets and hot-reloads the peer list (via `wg set`) every 5 seconds without proxy restarts
+- `gopher.cni/proxy` pod label: pods labeled with a `GopherProxy` name are automatically provisioned as VPN peers; the controller allocates each pod an IP from the proxy's internal subnet and creates a `wg.conf` Secret for the CNI plugin to consume
+- Combined `gopher-cni-manager` binary (`cmd/manager/`) runs both the mutating/validating webhook and the new GopherProxy controller in a single Deployment
+- New `gopher-cni-proxy` binary (`cmd/proxy/`) runs inside the proxy pod, managing the dual WireGuard interfaces (`wg-internal`, `wg-vpn`) and routing between them with iptables MASQUERADE
+- `gopherproxy.yaml` CRD manifest in `config/crd/` and as a Helm template
+- Helm chart: new `manager.*` and `proxy.*` image sections in `values.yaml`; expanded RBAC for GopherProxy CRUD, lease management, and event creation
+
 ## [0.10.0]
 
 ### Fixed

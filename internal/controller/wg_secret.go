@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -13,21 +14,21 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	gopherv1alpha1 "github.com/bartlettc22/gopher-cni/api/v1alpha1"
+	gcnicni "github.com/bartlettc22/gopher-cni/internal/cni"
 )
 
-const (
-	secretKeyPrivateKey = "privateKey"
-	secretKeyPublicKey  = "publicKey"
-)
-
-// reconcileInternalWGSecret ensures the proxy's internal WireGuard key-pair Secret exists.
-// If absent, it generates a new key pair and creates the Secret. Returns the public key.
+// reconcileInternalWGSecret ensures the proxy's internal WireGuard Secret exists.
+// It stores:
+//   - wg.conf  — Interface-only WireGuard config consumed by the CNI plugin
+//   - publicKey — public key used by the controller when generating peer client configs
+//
+// If the Secret is absent a new key pair is generated. Returns the public key string.
 func reconcileInternalWGSecret(ctx context.Context, c client.Client, proxy *gopherv1alpha1.GopherProxy) (string, error) {
 	secretName := internalWGSecretName(proxy.Name)
 	secret := &corev1.Secret{}
 	err := c.Get(ctx, types.NamespacedName{Namespace: proxy.Namespace, Name: secretName}, secret)
 	if err == nil {
-		return string(secret.Data[secretKeyPublicKey]), nil
+		return string(secret.Data[gcnicni.SecretKeyPublicKey]), nil
 	}
 	if !apierrors.IsNotFound(err) {
 		return "", fmt.Errorf("getting internal WG secret: %w", err)
@@ -39,14 +40,21 @@ func reconcileInternalWGSecret(ctx context.Context, c client.Client, proxy *goph
 	}
 	publicKey := privateKey.PublicKey()
 
+	listenPort := proxy.Spec.InternalListenPort
+	if listenPort == 0 {
+		listenPort = 51820
+	}
+
+	wgConf := buildInternalWGConf(privateKey.String(), proxy.Spec.InternalAddress, int(listenPort))
+
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName,
 			Namespace: proxy.Namespace,
 		},
 		Data: map[string][]byte{
-			secretKeyPrivateKey: []byte(privateKey.String()),
-			secretKeyPublicKey:  []byte(publicKey.String()),
+			gcnicni.SecretKeyWGConf:    []byte(wgConf),
+			gcnicni.SecretKeyPublicKey: []byte(publicKey.String()),
 		},
 	}
 	if err := controllerutil.SetControllerReference(proxy, secret, c.Scheme()); err != nil {
@@ -58,9 +66,19 @@ func reconcileInternalWGSecret(ctx context.Context, c client.Client, proxy *goph
 	return publicKey.String(), nil
 }
 
-// reconcilePeersSecret ensures the proxy's peers Secret exists. The proxy pod mounts
-// this Secret and hot-reloads it to update WireGuard peers without restarting.
-// Returns true if the Secret was created (i.e., it is empty and needs peer population).
+// buildInternalWGConf renders a wg.conf with only an [Interface] section.
+// The CNI plugin merges this with the peers secret at pod-creation time.
+func buildInternalWGConf(privateKey, address string, listenPort int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "[Interface]\n")
+	fmt.Fprintf(&sb, "PrivateKey = %s\n", privateKey)
+	fmt.Fprintf(&sb, "Address = %s\n", address)
+	fmt.Fprintf(&sb, "ListenPort = %d\n", listenPort)
+	return sb.String()
+}
+
+// reconcilePeersSecret ensures the proxy's peers Secret exists with a peers.conf key.
+// The peers.conf starts empty and is populated by reconcilePeers.
 func reconcilePeersSecret(ctx context.Context, c client.Client, proxy *gopherv1alpha1.GopherProxy) error {
 	secretName := peersSecretName(proxy.Name)
 	existing := &corev1.Secret{}
@@ -77,9 +95,8 @@ func reconcilePeersSecret(ctx context.Context, c client.Client, proxy *gopherv1a
 			Name:      secretName,
 			Namespace: proxy.Namespace,
 		},
-		// peers.conf starts empty; the peer reconciler populates it.
 		Data: map[string][]byte{
-			"peers.conf": {},
+			gcnicni.SecretKeyPeersConf: {},
 		},
 	}
 	if err := controllerutil.SetControllerReference(proxy, secret, c.Scheme()); err != nil {

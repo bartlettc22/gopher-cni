@@ -107,6 +107,26 @@ func (p CNIProvider) CNIMode() string {
 	return cni.CNIModePodOrigin
 }
 
+// FetchRawInternalWGConfig fetches the internal WireGuard interface config for proxy mode.
+// The secret contains a wg.conf with only an [Interface] section (no peers).
+func (p CNIProvider) FetchRawInternalWGConfig() ([]byte, error) {
+	secretName := fetchAnnotation(p.pod, cni.AnnotationProxyInternalWGConfSecret)
+	if secretName == "" {
+		return nil, fmt.Errorf("missing required annotation: %s", cni.AnnotationProxyInternalWGConfSecret)
+	}
+	return p.client.FetchSecretKey(context.Background(), p.PodNamespace(), secretName, cni.SecretKeyWGConf)
+}
+
+// FetchRawPeersConfig fetches the peers.conf from the proxy peers Secret.
+// The content is a series of WireGuard [Peer] sections with no [Interface] header.
+func (p CNIProvider) FetchRawPeersConfig() ([]byte, error) {
+	secretName := fetchAnnotation(p.pod, cni.AnnotationProxyPeersSecret)
+	if secretName == "" {
+		return nil, fmt.Errorf("missing required annotation: %s", cni.AnnotationProxyPeersSecret)
+	}
+	return p.client.FetchSecretKey(context.Background(), p.PodNamespace(), secretName, cni.SecretKeyPeersConf)
+}
+
 // SplitTunnelCIDRs parses the split-tunnel-cidrs annotation into a list of networks
 // that should be routed via the original default interface instead of WireGuard.
 func (p CNIProvider) SplitTunnelCIDRs() ([]*net.IPNet, error) {

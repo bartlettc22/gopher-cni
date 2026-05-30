@@ -42,8 +42,30 @@ const (
 	// CNIModeHostOrigin is the host-origin CNI mode
 	CNIModeHostOrigin = "host-origin"
 
+	// CNIModeProxy configures the pod as a WireGuard proxy: a wg-internal server
+	// (for peer pods) bridged to a wg-vpn client (external VPN). ip_forward and
+	// MASQUERADE are enabled so peer traffic is forwarded through the VPN.
+	CNIModeProxy = "proxy"
+
 	// DefaultCNIMode is the default CNI mode
 	DefaultCNIMode = CNIModePodOrigin
+
+	// AnnotationProxyInternalWGConfSecret is the annotation key for the Secret that holds
+	// the proxy's internal WireGuard interface config (Interface section only; no peers).
+	// Used only when cni-mode=proxy.
+	AnnotationProxyInternalWGConfSecret = LabelPrefix + "proxy-internal-wgconf-secret"
+
+	// AnnotationProxyPeersSecret is the annotation key for the Secret whose "peers.conf"
+	// key contains the WireGuard [Peer] entries for the internal interface.
+	// Used only when cni-mode=proxy.
+	AnnotationProxyPeersSecret = LabelPrefix + "proxy-peers-secret"
+
+	// SecretKeyPeersConf is the key in the peers Secret that holds the WireGuard peer list.
+	SecretKeyPeersConf = "peers.conf"
+
+	// SecretKeyPublicKey is the key in the internal WG Secret that holds the public key,
+	// used by the controller when generating peer client configs.
+	SecretKeyPublicKey = "publicKey"
 
 	// PluginBinaryName is the name of the CNI plugin binary
 	PluginBinaryName = "gopher-cni"

@@ -6,8 +6,11 @@ Gopher CNI is enabled on a per-pod basis using a combination of labels and annot
 |Label|Description|Required|
 |---|---|---|
 |`gopher.cni/enabled`|Enables Gopher CNI for this pod. Must be set to `"true"`.|Yes|
+|`gopher.cni/proxy`|Name of a `GopherProxy` resource in the same namespace. The GopherProxy controller auto-generates a WireGuard client config Secret for this pod and registers it as a VPN peer. Set `gopher.cni/wgconf-secret` to `<proxy-name>-peer-<pod-name>-wg` to reference it.|No|
 
 The `gopher.cni/enabled` label serves as the primary gate for the Gopher CNI feature. This label is used by the mutating webhook to efficiently filter which pods need processing, avoiding unnecessary webhook invocations for pods that don't use Gopher CNI.
+
+When using a `GopherProxy` (see [GopherProxy](gopher-proxy.md)), the WireGuard Secret is auto-generated — you do not create it manually. Set `gopher.cni/wgconf-secret` to `<proxy-name>-peer-<pod-name>-wg` and the controller will create it before the pod starts.
 
 ## Pod Annotations
 |Annotation|Description|Default|

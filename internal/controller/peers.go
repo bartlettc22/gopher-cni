@@ -229,6 +229,17 @@ func loadPeerEntries(ctx context.Context, c client.Client, proxy *gopherv1alpha1
 	return parsePeersConf(string(secret.Data["peers.conf"])), nil
 }
 
+// currentPeersConf reads the raw peers.conf bytes from the proxy's peers Secret.
+// Returns nil if the Secret does not yet exist.
+func currentPeersConf(ctx context.Context, c client.Client, proxy *gopherv1alpha1.GopherProxy) []byte {
+	secret := &corev1.Secret{}
+	err := c.Get(ctx, types.NamespacedName{Namespace: proxy.Namespace, Name: peersSecretName(proxy.Name)}, secret)
+	if err != nil {
+		return nil
+	}
+	return secret.Data[gcnicni.SecretKeyPeersConf]
+}
+
 // parsePeersConf parses the INI-style peers.conf back into peerEntry structs.
 func parsePeersConf(conf string) []peerEntry {
 	var entries []peerEntry

@@ -20,6 +20,43 @@ var newKubeClient = kubernetes.NewClientFromConfigFile
 var setupViaHost func(string, string, *wgtypes.Config, []*netlink.Addr, []*net.IPNet, []*net.IPNet, *slog.Logger) error = setupWGViaHost
 var setupViaContainer func(string, string, *wgtypes.Config, []*netlink.Addr, []*net.IPNet, []*net.IPNet, *slog.Logger) error = setupWGViaContainer
 
+// setupProxy fetches the internal WG config + peer list, merges them, and calls setupWGProxy.
+// vpnConfig / vpnAddrs come from the already-parsed wgconf-secret (the external VPN).
+func setupProxy(netNS string, k8s *CNIProvider, vpnConfig *wireguard.Config, vpnAddrs []*netlink.Addr, log *slog.Logger) error {
+	rawInternal, err := k8s.FetchRawInternalWGConfig()
+	if err != nil {
+		return fmt.Errorf("fetching internal WG config: %w", err)
+	}
+	internalConfig, err := wireguard.ParseConfig(rawInternal)
+	if err != nil {
+		return fmt.Errorf("parsing internal WG config: %w", err)
+	}
+
+	rawPeers, err := k8s.FetchRawPeersConfig()
+	if err != nil {
+		return fmt.Errorf("fetching peers config: %w", err)
+	}
+	// peers.conf contains only [Peer] sections; parse and merge into internalConfig.
+	if len(rawPeers) > 0 {
+		peersConfig, err := wireguard.ParseConfig(rawPeers)
+		if err != nil {
+			return fmt.Errorf("parsing peers config: %w", err)
+		}
+		internalConfig.WGConfig.Peers = peersConfig.WGConfig.Peers
+	}
+
+	var internalAddrs []*netlink.Addr
+	for _, ipnet := range internalConfig.Addresses {
+		addr, err := netlink.ParseAddr(ipnet.String())
+		if err != nil {
+			return fmt.Errorf("parsing internal WG address: %w", err)
+		}
+		internalAddrs = append(internalAddrs, addr)
+	}
+
+	return setupWGProxy(netNS, internalConfig.WGConfig, internalAddrs, vpnConfig.WGConfig, vpnAddrs, log)
+}
+
 func Add(args *skel.CmdArgs) (err error) {
 
 	conf, err := LoadNetConf(args.StdinData)
@@ -93,6 +130,10 @@ func Add(args *skel.CmdArgs) (err error) {
 		case cni.CNIModePodOrigin:
 			if err := setupViaContainer(args.Netns, cni.InterfaceName, wgConfig.WGConfig, wgAddrs, protectedNets, splitTunnelCIDRs, log); err != nil {
 				return e(log, "failed to setup network (pod-origin)", err)
+			}
+		case cni.CNIModeProxy:
+			if err := setupProxy(args.Netns, k8s, wgConfig, wgAddrs, log); err != nil {
+				return e(log, "failed to setup network (proxy)", err)
 			}
 		default:
 			return e(log, "unknown CNI mode", fmt.Errorf("unknown CNI mode: %s", k8s.CNIMode()))
