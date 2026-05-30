@@ -1,0 +1,224 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: gopherproxies.gopher.cni
+spec:
+  group: gopher.cni
+  names:
+    kind: GopherProxy
+    listKind: GopherProxyList
+    plural: gopherproxies
+    shortNames:
+    - gproxy
+    singular: gopherproxy
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.podName
+      name: Pod
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          GopherProxy creates a WireGuard proxy pod that forwards traffic from internal peer pods
+          to an external VPN, allowing multiple pods to share a single VPN connection.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GopherProxySpec defines the desired state of GopherProxy.
+            properties:
+              image:
+                description: Image is the container image for the proxy pod.
+                type: string
+              internalAddress:
+                description: |-
+                  InternalAddress is the WireGuard address (with prefix length) assigned to the proxy's
+                  internal interface. Peer IPs are allocated from this subnet.
+                  Example: "10.100.0.1/24"
+                pattern: ^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$
+                type: string
+              internalListenPort:
+                default: 51820
+                description: InternalListenPort is the UDP port the proxy's internal
+                  WireGuard interface listens on.
+                format: int32
+                maximum: 65535
+                minimum: 1
+                type: integer
+              peerAllowedIPs:
+                description: |-
+                  PeerAllowedIPs is the list of CIDRs that peer pods will route via this proxy.
+                  Defaults to 0.0.0.0/0 (all traffic through the proxy/VPN).
+                items:
+                  type: string
+                type: array
+              peerSelector:
+                description: |-
+                  PeerSelector selects pods in the same namespace that should receive an auto-generated
+                  WireGuard client config Secret to connect through this proxy.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              vpnWGSecret:
+                description: |-
+                  VPNWGSecret is the name of the Secret in the same namespace containing the external
+                  VPN WireGuard configuration (key: wg.conf).
+                type: string
+            required:
+            - internalAddress
+            - vpnWGSecret
+            type: object
+          status:
+            description: GopherProxyStatus defines the observed state of GopherProxy.
+            properties:
+              conditions:
+                description: Conditions represent the latest observations of the proxy's
+                  state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              internalPublicKey:
+                description: |-
+                  InternalPublicKey is the WireGuard public key for the proxy's internal interface.
+                  Peer pods use this value in their client configs.
+                type: string
+              peersSecretName:
+                description: |-
+                  PeersSecretName is the name of the Secret holding the current WireGuard peer list
+                  that the proxy pod hot-reloads.
+                type: string
+              phase:
+                description: Phase is the current lifecycle phase of the proxy.
+                type: string
+              podName:
+                description: PodName is the name of the managed proxy pod.
+                type: string
+              serviceName:
+                description: ServiceName is the name of the ClusterIP Service fronting
+                  the proxy's internal WireGuard port.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -5,6 +5,8 @@ vars:
   GOLANGCI_LINT_BIN: '{{.ROOT_DIR}}/bin/golangci-lint'
   K3D_VERSION: v5.7.4
   K3D_BIN: '{{.ROOT_DIR}}/bin/k3d'
+  CONTROLLER_GEN_VERSION: v0.17.3
+  CONTROLLER_GEN_BIN: '{{.ROOT_DIR}}/bin/controller-gen'
 
 tasks:
   _golangci-lint-install:
@@ -23,6 +25,26 @@ tasks:
           | tar -xz -C "{{.ROOT_DIR}}/bin" --strip-components=1 \
             "golangci-lint-{{.VERSION_NO_V}}-{{OS}}-{{ARCH}}/golangci-lint"
       fi
+
+  _controller-gen-install:
+    internal: true
+    run: once
+    cmds:
+    - |
+      if ! "{{.CONTROLLER_GEN_BIN}}" --version 2>/dev/null | grep -qF "{{.CONTROLLER_GEN_VERSION}}"; then
+        echo "Installing controller-gen {{.CONTROLLER_GEN_VERSION}}..."
+        mkdir -p "{{.ROOT_DIR}}/bin"
+        GOBIN="{{.ROOT_DIR}}/bin" go install sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_GEN_VERSION}}
+      fi
+
+  go:generate:
+    desc: Generate deepcopy methods and CRD manifests from type markers, then sync to Helm chart
+    dir: '{{.ROOT_DIR}}'
+    deps: [_controller-gen-install]
+    cmds:
+    - '"{{.CONTROLLER_GEN_BIN}}" object paths="./api/..."'
+    - '"{{.CONTROLLER_GEN_BIN}}" crd paths="./api/..." output:crd:dir=config/crd/'
+    - 'cp config/crd/*.yaml chart/gopher-cni/crds/'
 
   go:fmt:
     desc: Format Go source files

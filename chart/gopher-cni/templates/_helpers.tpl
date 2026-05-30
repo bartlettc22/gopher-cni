@@ -65,6 +65,14 @@ app.kubernetes.io/component: webhook
 {{- end }}
 
 {{/*
+Manager Deployment selector labels (combined webhook + controller)
+*/}}
+{{- define "gopher-cni.managerSelectorLabels" -}}
+{{ include "gopher-cni.selectorLabels" . }}
+app.kubernetes.io/component: manager
+{{- end }}
+
+{{/*
 Create the name of the service account to use
 */}}
 {{- define "gopher-cni.serviceAccountName" -}}

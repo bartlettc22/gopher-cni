@@ -14,3 +14,47 @@ rules:
   verbs:
     - get
     - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+- apiGroups:
+    - gopher.cni
+  resources:
+    - gopherproxies
+  verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+- apiGroups:
+    - gopher.cni
+  resources:
+    - gopherproxies/status
+  verbs:
+    - get
+    - update
+    - patch
+- apiGroups:
+    - coordination.k8s.io
+  resources:
+    - leases
+  verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+- apiGroups:
+    - ""
+  resources:
+    - events
+  verbs:
+    - create
+    - patch

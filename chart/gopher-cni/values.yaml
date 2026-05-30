@@ -7,7 +7,7 @@ fullnameOverride: ""
 logLevel: info
 logFormat: json
 
-# Service account shared by both the installer DaemonSet and webhook Deployment
+# Service account shared by installer DaemonSet, manager Deployment, and proxy pods
 serviceAccount:
   # Annotations to add to the service account
   annotations: {}
@@ -54,8 +54,7 @@ installer:
 
   affinity: {}
 
-# Sidecar image — injected into user pods for init-validation, write-coredns-config,
-# and future subcommands (e.g. nat-pmp). Referenced by webhook.config.injectedImage.
+# Sidecar image — injected into user pods for init-validation and write-coredns-config.
 sidecar:
   image:
     repository: ghcr.io/bartlettc22/gopher-cni-sidecar
@@ -63,19 +62,21 @@ sidecar:
     # Overrides the image tag whose default is the chart appVersion
     tag: ""
 
-# Webhook Deployment — serves the mutating/validating admission webhook
-webhook:
+# Manager Deployment — combined admission webhook server + GopherProxy controller.
+manager:
   image:
-    repository: ghcr.io/bartlettc22/gopher-cni-webhook
+    repository: ghcr.io/bartlettc22/gopher-cni-manager
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion
     tag: ""
 
   replicaCount: 1
 
-  # Application config — maps directly to webhook environment variables and k8s webhook settings
+  leaderElection: false
+
+  # Application config — maps to environment variables and Kubernetes webhook settings
   config:
-    port: 8443
+    webhookPort: 8443
 
     # CoreDNS sidecar image for split-DNS pods
     coreDNSImage: "docker.io/coredns/coredns:1.13.1"
@@ -85,43 +86,37 @@ webhook:
       certPath: "/etc/webhook/certs/tls.crt"
       keyPath: "/etc/webhook/certs/tls.key"
 
-    # Webhook failure policy (Fail or Ignore)
-    failurePolicy: Fail
-
-    # Webhook timeout in seconds
-    timeoutSeconds: 10
-
   podAnnotations: {}
   podLabels: {}
 
   # Pod security context
   podSecurityContext: {}
 
-  # Container security context — webhook does not require host access
+  # Container security context — does not require host access
   securityContext:
     runAsNonRoot: true
     runAsUser: 65534
     allowPrivilegeEscalation: false
 
   resources: {}
-
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: 8443
-      scheme: HTTPS
-    initialDelaySeconds: 15
-    periodSeconds: 20
-
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: 8443
-      scheme: HTTPS
-    initialDelaySeconds: 5
-    periodSeconds: 10
-
   affinity: {}
+
+# Proxy image — used by the GopherProxy controller when creating proxy pods.
+proxy:
+  image:
+    repository: ghcr.io/bartlettc22/gopher-cni-proxy
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion
+    tag: ""
+
+# Webhook admission settings — referenced by the Webhook(Configuration) resources.
+# Kept separate from manager so webhook behaviour can be tuned independently.
+webhook:
+  # Webhook failure policy (Fail or Ignore)
+  config:
+    failurePolicy: Fail
+    # Webhook timeout in seconds
+    timeoutSeconds: 10
 
   # cert-manager certificate configuration
   certificate:
@@ -139,7 +134,7 @@ webhook:
       # Issuer kind (Issuer or ClusterIssuer)
       kind: Issuer
 
-  # Service configuration (fronts the webhook Deployment)
+  # Service configuration (fronts the manager Deployment for webhook traffic)
   service:
     type: ClusterIP
     port: 443

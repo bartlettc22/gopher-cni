@@ -1,25 +1,26 @@
-{{- $image := printf "%s:%s" .Values.webhook.image.repository (.Values.webhook.image.tag | default .Chart.AppVersion) -}}
+{{- $managerImage := printf "%s:%s" .Values.manager.image.repository (.Values.manager.image.tag | default .Chart.AppVersion) -}}
 {{- $sidecarImage := printf "%s:%s" .Values.sidecar.image.repository (.Values.sidecar.image.tag | default .Chart.AppVersion) -}}
+{{- $proxyImage := printf "%s:%s" .Values.proxy.image.repository (.Values.proxy.image.tag | default .Chart.AppVersion) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "gopher-cni.fullname" . }}-webhook
+  name: {{ include "gopher-cni.fullname" . }}-manager
   labels:
     {{- include "gopher-cni.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.webhook.replicaCount }}
+  replicas: {{ .Values.manager.replicaCount }}
   selector:
     matchLabels:
-      {{- include "gopher-cni.webhookSelectorLabels" . | nindent 6 }}
+      {{- include "gopher-cni.managerSelectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.webhook.podAnnotations }}
+      {{- with .Values.manager.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "gopher-cni.webhookSelectorLabels" . | nindent 8 }}
-        {{- with .Values.webhook.podLabels }}
+        {{- include "gopher-cni.managerSelectorLabels" . | nindent 8 }}
+        {{- with .Values.manager.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
@@ -29,11 +30,11 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "gopher-cni.serviceAccountName" . }}
       securityContext:
-        {{- toYaml .Values.webhook.podSecurityContext | nindent 8 }}
+        {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
       containers:
-      - name: gopher-cni-webhook
-        image: "{{ $image }}"
-        imagePullPolicy: {{ .Values.webhook.image.pullPolicy }}
+      - name: gopher-cni-manager
+        image: "{{ $managerImage }}"
+        imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
         env:
         - name: LOG_LEVEL
           value: {{ .Values.logLevel }}
@@ -42,25 +43,42 @@ spec:
         - name: WEBHOOK_SIDECAR_IMAGE
           value: {{ $sidecarImage | quote }}
         - name: WEBHOOK_COREDNS_IMAGE
-          value: {{ .Values.webhook.config.coreDNSImage | quote }}
+          value: {{ .Values.manager.config.coreDNSImage | quote }}
         - name: WEBHOOK_PORT
-          value: {{ .Values.webhook.config.port | quote }}
+          value: {{ .Values.manager.config.webhookPort | quote }}
         - name: WEBHOOK_TLS_CERT_PATH
-          value: {{ .Values.webhook.config.tls.certPath }}
+          value: {{ .Values.manager.config.tls.certPath }}
         - name: WEBHOOK_TLS_KEY_PATH
-          value: {{ .Values.webhook.config.tls.keyPath }}
+          value: {{ .Values.manager.config.tls.keyPath }}
+        - name: PROXY_IMAGE
+          value: {{ $proxyImage | quote }}
+        - name: PROBE_ADDR
+          value: ":8081"
+        - name: LEADER_ELECTION
+          value: {{ .Values.manager.leaderElection | quote }}
         ports:
         - name: webhook
-          containerPort: {{ .Values.webhook.config.port }}
+          containerPort: {{ .Values.manager.config.webhookPort }}
+          protocol: TCP
+        - name: health
+          containerPort: 8081
           protocol: TCP
         livenessProbe:
-          {{- toYaml .Values.webhook.livenessProbe | nindent 10 }}
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
         readinessProbe:
-          {{- toYaml .Values.webhook.readinessProbe | nindent 10 }}
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
-          {{- toYaml .Values.webhook.resources | nindent 10 }}
+          {{- toYaml .Values.manager.resources | nindent 10 }}
         securityContext:
-          {{- toYaml .Values.webhook.securityContext | nindent 10 }}
+          {{- toYaml .Values.manager.securityContext | nindent 10 }}
         volumeMounts:
         - name: tmp
           mountPath: /tmp
@@ -74,7 +92,7 @@ spec:
         secret:
           secretName: {{ include "gopher-cni.certificateSecretName" . }}
           defaultMode: 0640
-      {{- with .Values.webhook.affinity }}
+      {{- with .Values.manager.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
